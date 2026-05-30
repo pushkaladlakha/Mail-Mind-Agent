@@ -38,6 +38,7 @@ export interface UserPreferences {
   calendarEmail?: string;
   googleCalendarApiKey?: string;
   googleCalendarId?: string;
+  darkMode?: boolean;
 }
 
 export type SyncStatusType = "idle" | "connecting" | "fetching" | "classifying" | "summarizing" | "complete" | "error";
@@ -79,6 +80,7 @@ const DEFAULT_PREFS: UserPreferences = {
   calendarEmail: "",
   googleCalendarApiKey: "",
   googleCalendarId: "",
+  darkMode: false,
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -92,6 +94,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [syncStatus, setSyncStatus] = useState<SyncStatusType>("idle");
   const [syncProgress, setSyncProgress] = useState({ total: 0, processed: 0 });
   const [lastFetchedUid, setLastFetchedUid] = useState(0);
+
+  // Synchronize darkMode class on document element
+  useEffect(() => {
+    if (preferences.darkMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [preferences.darkMode]);
 
   // Initialize and check local storage sessions (offline fallback)
   useEffect(() => {

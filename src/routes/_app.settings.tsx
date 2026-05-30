@@ -29,6 +29,7 @@ function SettingsPage() {
   const [notify, setNotify] = useState(preferences.notifyImportant);
   const [digest, setDigest] = useState(preferences.notifyDigest);
   const [sync, setSync] = useState(preferences.autoSyncCalendar);
+  const [darkMode, setDarkMode] = useState(preferences.darkMode || false);
 
   // Keep state in sync with updated preferences from auth context
   useEffect(() => {
@@ -36,6 +37,7 @@ function SettingsPage() {
     setNotify(preferences.notifyImportant);
     setDigest(preferences.notifyDigest);
     setSync(preferences.autoSyncCalendar);
+    setDarkMode(preferences.darkMode || false);
   }, [preferences]);
 
   const lengthLabel = ["Short", "Medium", "Detailed"][length[0] - 1];
@@ -47,6 +49,7 @@ function SettingsPage() {
         notifyImportant: notify,
         notifyDigest: digest,
         autoSyncCalendar: sync,
+        darkMode: darkMode,
       });
       toast.success("Settings saved", { description: "Your preferences are up to date in the database." });
     } catch (err) {
@@ -126,6 +129,16 @@ function SettingsPage() {
           desc="Get a 9 AM summary of overnight academic mail."
           checked={digest}
           onChange={setDigest}
+        />
+      </section>
+
+      <section className="bg-surface rounded-2xl border border-border p-6 space-y-5">
+        <h3 className="font-bold">Appearance</h3>
+        <Row
+          title="Dark Mode Theme"
+          desc="Swap to a futuristic deep space navy-black theme."
+          checked={darkMode}
+          onChange={setDarkMode}
         />
       </section>
 
