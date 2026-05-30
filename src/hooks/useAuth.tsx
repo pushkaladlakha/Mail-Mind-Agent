@@ -24,7 +24,7 @@ import {
   fetchMailbox,
 } from "@/lib/email-service";
 import { toast } from "sonner";
-import { fetchRealEmails, checkCalendarConnection } from "@/lib/api/webmail.functions";
+import { fetchRealEmails } from "@/lib/api/webmail.functions";
 
 // Mock email ID patterns that should be auto-cleaned from real user databases
 const MOCK_EMAIL_ID_PATTERN = /^(e\d+|incoming-\d+)$/;
@@ -36,9 +36,12 @@ export interface UserPreferences {
   autoSyncCalendar: boolean;
   calendarConnected?: boolean;
   calendarEmail?: string;
+  googleCalendarApiKey?: string;
+  googleCalendarId?: string;
 }
 
 export type SyncStatusType = "idle" | "connecting" | "fetching" | "classifying" | "summarizing" | "complete" | "error";
+export type SyncMode = "since_last" | "latest_count";
 
 interface AuthContextType {
   user: { email: string | null; uid: string } | null;
@@ -53,11 +56,12 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
   enterDemoMode: () => Promise<void>;
-  syncMail: () => Promise<void>;
+  syncMail: (mode?: SyncMode, count?: number) => Promise<void>;
+  lastFetchedUid: number;
   updateEmailCategory: (emailId: string, category: EmailCategory) => Promise<void>;
   updateEmailReadStatus: (emailId: string, unread: boolean) => Promise<void>;
   deleteEmail: (emailId: string) => Promise<void>;
-  connectGoogleCalendar: () => Promise<void>;
+  connectGoogleCalendar: (apiKey: string, calendarId: string) => Promise<void>;
   disconnectGoogleCalendar: () => Promise<void>;
   savePreferences: (prefs: Partial<UserPreferences>) => Promise<void>;
 }
@@ -71,6 +75,8 @@ const DEFAULT_PREFS: UserPreferences = {
   autoSyncCalendar: true,
   calendarConnected: false,
   calendarEmail: "",
+  googleCalendarApiKey: "",
+  googleCalendarId: "",
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -83,6 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Sync state tracking
   const [syncStatus, setSyncStatus] = useState<SyncStatusType>("idle");
   const [syncProgress, setSyncProgress] = useState({ total: 0, processed: 0 });
+  const [lastFetchedUid, setLastFetchedUid] = useState(0);
 
   // Initialize and check local storage sessions (offline fallback)
   useEffect(() => {
@@ -236,30 +243,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user, isDemoMode]);
 
-  // Synchronize secure server-side Google Calendar connection state dynamically
+  // Synchronize Google Calendar connection state from saved preferences
   useEffect(() => {
     if (!user || isDemoMode) return;
-
-    const checkCalendar = async () => {
-      try {
-        const res = await checkCalendarConnection();
-        if (res.connected) {
-          savePreferences({
-            calendarConnected: true,
-            calendarEmail: res.email
-          });
-        } else {
-          savePreferences({
-            calendarConnected: false,
-            calendarEmail: ""
-          });
-        }
-      } catch (err) {
-        console.error("Failed to check server Google Calendar connection:", err);
-      }
-    };
-
-    checkCalendar();
+    // Calendar connection state is driven by the saved API key in preferences
+    // No server-side check needed — user inputs their key directly via Settings
   }, [user, isDemoMode]);
 
   // Auth Operations
@@ -363,7 +351,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Sync Mailbox Pipeline (incremental sync)
-  const syncMail = async () => {
+  const syncMail = async (mode: SyncMode = "since_last", count: number = 15) => {
     if (!user) return;
     if (syncStatus !== "idle") return;
 
@@ -448,11 +436,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Load lastFetchedUid from storage if not already set
+      let currentLastUid = lastFetchedUid;
+      if (currentLastUid === 0) {
+        if (!firebaseConfigured) {
+          const storedUid = localStorage.getItem(`mm_lastuid_${user.uid}`);
+          if (storedUid) currentLastUid = parseInt(storedUid, 10) || 0;
+        } else if (db) {
+          try {
+            const uidDoc = await getDoc(doc(db, "users", user.uid, "settings", "lastuid"));
+            if (uidDoc.exists()) currentLastUid = uidDoc.data().uid || 0;
+          } catch (_) {}
+        }
+        if (currentLastUid > 0) setLastFetchedUid(currentLastUid);
+      }
+
       setSyncStatus("fetching");
       const result = await fetchRealEmails({
         data: {
           email: user.email!,
           password: cachedPassword,
+          mode,
+          lastUid: currentLastUid > 0 ? currentLastUid : undefined,
+          count,
         }
       });
 
@@ -466,10 +472,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const liveEmails = result.emails;
+      const serverHighestUid = (result as any).highestUid || 0;
 
       if (liveEmails.length === 0) {
+        // Still update the UID tracker even if no new emails
+        if (serverHighestUid > currentLastUid) {
+          setLastFetchedUid(serverHighestUid);
+          if (!firebaseConfigured) {
+            localStorage.setItem(`mm_lastuid_${user.uid}`, String(serverHighestUid));
+          } else if (db) {
+            setDoc(doc(db, "users", user.uid, "settings", "lastuid"), { uid: serverHighestUid }).catch(() => {});
+          }
+        }
         setSyncStatus("complete");
-        toast.info("Sync complete. Your inbox is empty.");
+        toast.info("Sync complete. No new emails found.");
         setTimeout(() => setSyncStatus("idle"), 2000);
         return;
       }
@@ -521,6 +537,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         processedEmails.push(completeEmail);
         setSyncProgress((prev) => ({ ...prev, processed: i + 1 }));
+      }
+
+      // Save the highest UID for next sync
+      if (serverHighestUid > currentLastUid) {
+        setLastFetchedUid(serverHighestUid);
+        if (!firebaseConfigured) {
+          localStorage.setItem(`mm_lastuid_${user.uid}`, String(serverHighestUid));
+        } else if (db) {
+          setDoc(doc(db, "users", user.uid, "settings", "lastuid"), { uid: serverHighestUid }).catch(() => {});
+        }
       }
 
       if (processedEmails.length === 0) {
@@ -634,37 +660,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await deleteDoc(emailRef);
   };
 
-  const connectGoogleCalendar = async () => {
+  const connectGoogleCalendar = async (apiKey: string, calendarId: string) => {
     if (!user) return;
-    try {
-      const res = await checkCalendarConnection();
-      if (res.connected) {
-        await savePreferences({
-          calendarConnected: true,
-          calendarEmail: res.email || user.email || ""
-        });
-        toast.success("Google Calendar connected!", {
-          description: `Linked to ${res.email || user.email}`,
-        });
-      } else {
-        toast.error("Google Calendar not set up", {
-          description: "Run 'python3 calendar_sync.py --auth' in the mail-fetcher-backend folder to authenticate your Google account first.",
-          duration: 8000,
-        });
-      }
-    } catch (err) {
-      console.error("Google Calendar connection check failed:", err);
-      toast.error("Calendar connection failed", {
-        description: "Could not verify Google Calendar authentication. Check your backend server.",
+    
+    if (!apiKey.trim() || !calendarId.trim()) {
+      toast.error("Missing fields", {
+        description: "Please enter both your Google Calendar API Key and Calendar ID.",
       });
+      return;
     }
+
+    await savePreferences({
+      calendarConnected: true,
+      calendarEmail: calendarId.trim(),
+      googleCalendarApiKey: apiKey.trim(),
+      googleCalendarId: calendarId.trim(),
+    });
+    toast.success("Google Calendar connected!", {
+      description: `API key saved. Calendar ID: ${calendarId.trim()}`,
+    });
   };
 
   const disconnectGoogleCalendar = async () => {
     if (!user) return;
     await savePreferences({
       calendarConnected: false,
-      calendarEmail: ""
+      calendarEmail: "",
+      googleCalendarApiKey: "",
+      googleCalendarId: "",
     });
     toast.info("Google Calendar disconnected.");
   };
@@ -706,6 +729,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logOut,
         enterDemoMode,
         syncMail,
+        lastFetchedUid,
         updateEmailCategory,
         updateEmailReadStatus,
         deleteEmail,

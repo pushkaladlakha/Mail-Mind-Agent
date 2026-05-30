@@ -4,7 +4,8 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { Shield, CheckCircle, AlertTriangle, Key } from "lucide-react";
+import { Shield, CheckCircle, AlertTriangle, Key, CalendarRange, Eye, EyeOff } from "lucide-react";
+import { UserPreferences } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_app/settings")({
   head: () => ({ meta: [{ title: "Settings — Mail Mind" }] }),
@@ -128,51 +129,13 @@ function SettingsPage() {
         />
       </section>
 
-      <section className="bg-surface rounded-2xl border border-border p-6 space-y-5">
-        <h3 className="font-bold flex items-center justify-between">
-          <span>Calendar sync</span>
-          {preferences.calendarConnected && (
-            <span className="text-[10px] bg-success/10 text-success px-2 py-0.5 rounded-full font-bold border border-success/20">
-              Active Sync
-            </span>
-          )}
-        </h3>
-        <Row
-          title="Auto-sync extracted dates"
-          desc="Push deadlines and exam dates to your institute calendar."
-          checked={sync}
-          onChange={setSync}
-        />
-        
-        {preferences.calendarConnected ? (
-          <div className="bg-muted/50 border rounded-xl p-4 flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <div className="text-xs text-muted-foreground">Connected Google Account</div>
-              <div className="text-sm font-semibold text-foreground select-all">
-                {preferences.calendarEmail}
-              </div>
-            </div>
-            <button
-              onClick={disconnectGoogleCalendar}
-              className="text-xs text-destructive hover:underline font-bold"
-            >
-              Disconnect
-            </button>
-          </div>
-        ) : (
-          <div className="bg-muted/50 border border-dashed border-border rounded-xl p-4 flex flex-col items-center text-center space-y-3">
-            <p className="text-xs text-muted-foreground leading-relaxed max-w-sm">
-              Link your personal or institute Google Calendar to automatically schedule exam timetables, quiz submissions, and project deadlines directly to your agenda.
-            </p>
-            <button
-              onClick={connectGoogleCalendar}
-              className="bg-accent text-white px-4 py-2 rounded-lg text-xs font-bold hover:opacity-90 active:scale-[0.97] cursor-pointer inline-flex items-center gap-1.5 transition-all"
-            >
-              Connect Google Calendar
-            </button>
-          </div>
-        )}
-      </section>
+      <CalendarSection
+        preferences={preferences}
+        sync={sync}
+        setSync={setSync}
+        connectGoogleCalendar={connectGoogleCalendar}
+        disconnectGoogleCalendar={disconnectGoogleCalendar}
+      />
 
       {/* Firebase Configuration Info Panel */}
       <section className="bg-surface rounded-2xl border border-border p-6 space-y-4">
@@ -257,5 +220,146 @@ function Row({
       </div>
       <Switch checked={checked} onCheckedChange={onChange} />
     </div>
+  );
+}
+
+function CalendarSection({
+  preferences,
+  sync,
+  setSync,
+  connectGoogleCalendar,
+  disconnectGoogleCalendar,
+}: {
+  preferences: UserPreferences;
+  sync: boolean;
+  setSync: (v: boolean) => void;
+  connectGoogleCalendar: (apiKey: string, calendarId: string) => Promise<void>;
+  disconnectGoogleCalendar: () => Promise<void>;
+}) {
+  const [apiKey, setApiKey] = useState(preferences.googleCalendarApiKey || "");
+  const [calendarId, setCalendarId] = useState(preferences.googleCalendarId || "");
+  const [showKey, setShowKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setApiKey(preferences.googleCalendarApiKey || "");
+    setCalendarId(preferences.googleCalendarId || "");
+  }, [preferences.googleCalendarApiKey, preferences.googleCalendarId]);
+
+  const handleConnect = async () => {
+    setSaving(true);
+    await connectGoogleCalendar(apiKey, calendarId);
+    setSaving(false);
+  };
+
+  const maskKey = (key: string) => {
+    if (key.length <= 8) return "••••••••";
+    return key.substring(0, 4) + "••••••••" + key.substring(key.length - 4);
+  };
+
+  return (
+    <section className="bg-surface rounded-2xl border border-border p-6 space-y-5">
+      <h3 className="font-bold flex items-center justify-between">
+        <span className="flex items-center gap-2">
+          <CalendarRange className="size-4 text-accent" />
+          Calendar Integration
+        </span>
+        {preferences.calendarConnected && (
+          <span className="text-[10px] bg-success/10 text-success px-2 py-0.5 rounded-full font-bold border border-success/20">
+            Connected
+          </span>
+        )}
+      </h3>
+      <Row
+        title="Auto-sync extracted dates"
+        desc="Push deadlines and exam dates to your Google Calendar."
+        checked={sync}
+        onChange={setSync}
+      />
+
+      {preferences.calendarConnected ? (
+        <div className="space-y-3">
+          <div className="bg-success/5 border border-success/20 rounded-xl p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <div className="text-xs text-muted-foreground">API Key</div>
+                <div className="text-sm font-mono font-semibold text-foreground">
+                  {showKey ? preferences.googleCalendarApiKey : maskKey(preferences.googleCalendarApiKey || "")}
+                </div>
+              </div>
+              <button
+                onClick={() => setShowKey(!showKey)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
+            <div className="space-y-0.5">
+              <div className="text-xs text-muted-foreground">Calendar ID</div>
+              <div className="text-sm font-semibold text-foreground select-all">
+                {preferences.googleCalendarId}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={disconnectGoogleCalendar}
+            className="text-xs text-destructive hover:underline font-bold"
+          >
+            Disconnect Calendar
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Paste your Google Calendar API key and Calendar ID below to automatically push exam dates, deadlines, and events to your calendar.
+          </p>
+          <a
+            href="https://github.com/pushkaladlakha/Mail-Mind-Agent/blob/main/GOOGLE_CALENDAR_SETUP.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[10px] font-bold text-accent hover:underline"
+          >
+            📖 How to get your API Key & Calendar ID →
+          </a>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Google Calendar API Key</label>
+              <input
+                type={showKey ? "text" : "password"}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+              />
+              <button
+                onClick={() => setShowKey(!showKey)}
+                className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+              >
+                {showKey ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+                {showKey ? "Hide" : "Show"} key
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Calendar ID</label>
+              <input
+                type="text"
+                value={calendarId}
+                onChange={(e) => setCalendarId(e.target.value)}
+                placeholder="your-email@gmail.com or calendar ID"
+                className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm font-mono placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
+              />
+              <p className="text-[10px] text-muted-foreground">Usually your Gmail address, or find it in Google Calendar → Settings → Calendar ID.</p>
+            </div>
+          </div>
+          <button
+            onClick={handleConnect}
+            disabled={saving || !apiKey.trim() || !calendarId.trim()}
+            className="bg-accent text-white px-4 py-2 rounded-lg text-xs font-bold hover:opacity-90 active:scale-[0.97] cursor-pointer inline-flex items-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? "Saving..." : "Connect Google Calendar"}
+          </button>
+        </div>
+      )}
+    </section>
   );
 }

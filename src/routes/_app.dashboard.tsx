@@ -5,9 +5,9 @@ import { EmailCard } from "@/components/EmailCard";
 import { DeadlineList } from "@/components/DeadlineList";
 import { CategoryBreakdown } from "@/components/CategoryBreakdown";
 import { EmailListSkeleton } from "@/components/EmailListSkeleton";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth, SyncMode, SyncStatusType } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { Archive, Loader2 } from "lucide-react";
+import { Archive, Loader2, ChevronDown, RefreshCw, Mail } from "lucide-react";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Mail Mind" }] }),
@@ -119,20 +119,7 @@ function Dashboard() {
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <h2 className="text-xl font-bold tracking-tight">Academic Priority Stream</h2>
-            <button
-              onClick={syncMail}
-              disabled={syncStatus !== "idle"}
-              className="bg-academic text-white px-4 py-2 rounded-xl text-xs font-bold shadow hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
-            >
-              {syncStatus !== "idle" ? (
-                <>
-                  <Loader2 className="size-3.5 animate-spin" />
-                  Syncing...
-                </>
-              ) : (
-                "Sync Mail"
-              )}
-            </button>
+            <SyncButton syncMail={syncMail} syncStatus={syncStatus} isDemoMode={isDemoMode} />
           </div>
           <div className="flex gap-2 flex-wrap">
             {FILTERS.map((f) => (
@@ -188,6 +175,115 @@ function Dashboard() {
           </Link>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SyncButton({
+  syncMail,
+  syncStatus,
+  isDemoMode,
+}: {
+  syncMail: (mode?: SyncMode, count?: number) => Promise<void>;
+  syncStatus: SyncStatusType;
+  isDemoMode: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [fetchCount, setFetchCount] = useState(15);
+  const disabled = syncStatus !== "idle";
+
+  const handleSync = (mode: SyncMode) => {
+    setOpen(false);
+    syncMail(mode, fetchCount);
+  };
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [open]);
+
+  if (disabled) {
+    return (
+      <div className="bg-academic/80 text-white px-4 py-2 rounded-xl text-xs font-bold shadow flex items-center gap-1.5">
+        <Loader2 className="size-3.5 animate-spin" />
+        Syncing...
+      </div>
+    );
+  }
+
+  // In demo mode, keep simple sync button
+  if (isDemoMode) {
+    return (
+      <button
+        onClick={() => syncMail()}
+        className="bg-academic text-white px-4 py-2 rounded-xl text-xs font-bold shadow hover:opacity-90 active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
+      >
+        Sync Mail
+      </button>
+    );
+  }
+
+  return (
+    <div className="relative" onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-stretch">
+        <button
+          onClick={() => handleSync("since_last")}
+          className="bg-academic text-white px-4 py-2 rounded-l-xl text-xs font-bold shadow hover:opacity-90 active:scale-[0.98] cursor-pointer flex items-center gap-1.5"
+        >
+          <RefreshCw className="size-3.5" />
+          Sync New
+        </button>
+        <button
+          onClick={() => setOpen(!open)}
+          className="bg-academic text-white px-2 py-2 rounded-r-xl text-xs font-bold shadow hover:opacity-90 active:scale-[0.98] cursor-pointer border-l border-white/20"
+        >
+          <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-64 bg-surface border border-border rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+          <button
+            onClick={() => handleSync("since_last")}
+            className="w-full text-left px-4 py-3 text-xs hover:bg-muted transition-colors flex items-start gap-3"
+          >
+            <RefreshCw className="size-4 text-accent shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold text-foreground">Fetch new emails</div>
+              <div className="text-muted-foreground mt-0.5">Only emails received since your last sync</div>
+            </div>
+          </button>
+          <div className="border-t border-border" />
+          <div className="px-4 py-3 space-y-2">
+            <div className="flex items-start gap-3">
+              <Mail className="size-4 text-accent shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="text-xs font-bold text-foreground">Fetch latest N emails</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Already-read emails are automatically skipped</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 ml-7">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={fetchCount}
+                onChange={(e) => setFetchCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                className="w-16 bg-background border border-border rounded-lg px-2 py-1.5 text-xs font-mono text-center focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+              />
+              <button
+                onClick={() => handleSync("latest_count")}
+                className="bg-accent text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 active:scale-[0.97] cursor-pointer"
+              >
+                Fetch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
