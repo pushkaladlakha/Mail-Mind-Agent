@@ -138,6 +138,7 @@ function ConnectPage() {
       }
 
       setAuthStatus("success");
+      sessionStorage.setItem("mm_password", password); // Cache securely in memory for active tab session
       setPassword(""); // Clear immediately for security
       toast.success("Mail connected successfully.");
       
@@ -337,7 +338,7 @@ function ConnectPage() {
                     disabled={authStatus === "connecting"}
                     value={email}
                     onChange={(e) => handleEmailChange(e.target.value)}
-                    placeholder="rollno@iitb.ac.in"
+                    placeholder="kerberos@iitd.ac.in"
                     className={emailInputClass}
                   />
                 </div>

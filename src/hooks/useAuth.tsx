@@ -24,7 +24,10 @@ import {
   fetchMailbox,
 } from "@/lib/email-service";
 import { toast } from "sonner";
-import { checkCalendarConnection } from "@/lib/api/webmail.functions";
+import { fetchRealEmails, checkCalendarConnection } from "@/lib/api/webmail.functions";
+
+// Mock email ID patterns that should be auto-cleaned from real user databases
+const MOCK_EMAIL_ID_PATTERN = /^(e\d+|incoming-\d+)$/;
 
 export interface UserPreferences {
   summaryLength: number; // 1: Short, 2: Medium, 3: Detailed
@@ -113,7 +116,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser({ email: storedUser, uid: storedUid });
           const localEmails = localStorage.getItem(`mm_emails_${storedUid}`);
           if (localEmails) {
-            setEmails(JSON.parse(localEmails));
+            const parsed: Email[] = JSON.parse(localEmails);
+            // Auto-clean mock emails from localStorage
+            const cleaned = parsed.filter((e) => !MOCK_EMAIL_ID_PATTERN.test(e.id));
+            if (cleaned.length !== parsed.length) {
+              localStorage.setItem(`mm_emails_${storedUid}`, JSON.stringify(cleaned));
+            }
+            setEmails(cleaned);
           } else {
             localStorage.setItem(`mm_emails_${storedUid}`, JSON.stringify([]));
             setEmails([]);
@@ -177,9 +186,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setEmails([]);
         } else {
           const list: Email[] = [];
-          snapshot.forEach((doc) => {
-            list.push(doc.data() as Email);
+          const mockIdsToDelete: string[] = [];
+          snapshot.forEach((d) => {
+            const data = d.data() as Email;
+            // Auto-clean any leftover pre-seeded mock emails
+            if (MOCK_EMAIL_ID_PATTERN.test(data.id)) {
+              mockIdsToDelete.push(data.id);
+            } else {
+              list.push(data);
+            }
           });
+          // Background cleanup: delete mock emails from Firestore
+          if (mockIdsToDelete.length > 0 && db) {
+            const cleanBatch = writeBatch(db);
+            mockIdsToDelete.forEach((id) => {
+              cleanBatch.delete(doc(db!, "users", user.uid, "emails", id));
+            });
+            cleanBatch.commit().catch((err) =>
+              console.error("Failed to clean mock emails from Firestore:", err)
+            );
+          }
           // Sort items by date received descending
           list.sort((a, b) => +new Date(b.receivedAt) - +new Date(a.receivedAt));
           setEmails(list);
@@ -280,7 +306,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       const localEmails = localStorage.getItem(`mm_emails_${dummyUid}`);
       if (localEmails) {
-        setEmails(JSON.parse(localEmails));
+        const parsed: Email[] = JSON.parse(localEmails);
+        const cleaned = parsed.filter((e) => !MOCK_EMAIL_ID_PATTERN.test(e.id));
+        if (cleaned.length !== parsed.length) {
+          localStorage.setItem(`mm_emails_${dummyUid}`, JSON.stringify(cleaned));
+        }
+        setEmails(cleaned);
       } else {
         localStorage.setItem(`mm_emails_${dummyUid}`, JSON.stringify([]));
         setEmails([]);
@@ -340,93 +371,173 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSyncProgress({ total: 0, processed: 0 });
 
     try {
-      // 1. Retrieve the last synced checkpoint
-      let lastCheckpoint = 0;
+      // ── DEMO MODE: Use mock fetchMailbox pipeline ──
       if (isDemoMode) {
+        let lastCheckpoint = 0;
         const stored = sessionStorage.getItem("mm_checkpoint_demo_user");
         lastCheckpoint = stored ? parseInt(stored, 10) : 0;
-      } else if (!firebaseConfigured) {
-        const stored = localStorage.getItem(`mm_checkpoint_${user.uid}`);
-        lastCheckpoint = stored ? parseInt(stored, 10) : 0;
-      } else {
-        if (db) {
-          try {
-            const checkpointRef = doc(db, "users", user.uid, "settings", "checkpoint");
-            const snap = await getDoc(checkpointRef);
-            if (snap.exists()) {
-              lastCheckpoint = snap.data().timestamp || 0;
-            }
-          } catch (err) {
-            console.error("Failed to load Firebase checkpoint, defaulting to 0", err);
-          }
+
+        setSyncStatus("fetching");
+        const newRawEmails = await fetchMailbox(user.uid, lastCheckpoint);
+
+        if (newRawEmails.length === 0) {
+          setSyncStatus("complete");
+          toast.info("Sync complete. No new emails found.");
+          setTimeout(() => setSyncStatus("idle"), 2000);
+          return;
         }
+
+        setSyncProgress({ total: newRawEmails.length, processed: 0 });
+        const processedEmails: Email[] = [];
+        let importantCount = 0;
+        let lowPriorityCount = 0;
+
+        for (let i = 0; i < newRawEmails.length; i++) {
+          const item = newRawEmails[i];
+          setSyncStatus("classifying");
+          const category = classifyEmail(item.subject, item.body);
+          if (category === "important") importantCount++;
+          else lowPriorityCount++;
+
+          setSyncStatus("summarizing");
+          await new Promise((r) => setTimeout(r, 250));
+          const cleanedBody = cleanEmailBody(item.body);
+          const aiTriage = summarizeWithGemini(item.subject, item.sender, cleanedBody, category);
+
+          processedEmails.push({
+            id: item.id,
+            sender: item.sender,
+            senderEmail: item.senderEmail,
+            subject: item.subject,
+            bodySnippet: item.body,
+            receivedAt: item.receivedAt,
+            category,
+            kind: aiTriage.kind,
+            summary: aiTriage.summary,
+            extractedDates: aiTriage.extractedDates,
+            tags: aiTriage.tags,
+            unread: true,
+            priorityScore: aiTriage.priorityScore,
+          });
+          setSyncProgress((prev) => ({ ...prev, processed: i + 1 }));
+        }
+
+        const mergedList = [...processedEmails, ...emails];
+        mergedList.sort((a, b) => +new Date(b.receivedAt) - +new Date(a.receivedAt));
+        setEmails(mergedList);
+        const newCheckpointTime = +new Date();
+        localStorage.setItem("mm_emails_demo_user", JSON.stringify(mergedList));
+        sessionStorage.setItem("mm_checkpoint_demo_user", String(newCheckpointTime));
+
+        setSyncStatus("complete");
+        toast.success("Sync complete", {
+          description: `${newRawEmails.length} demo email${newRawEmails.length === 1 ? "" : "s"} triaged (${importantCount} important, ${lowPriorityCount} low-priority).`,
+        });
+        setTimeout(() => setSyncStatus("idle"), 2500);
+        return;
       }
 
-      // 2. Fetch new emails since the checkpoint
-      setSyncStatus("fetching");
-      const newRawEmails = await fetchMailbox(user.uid, lastCheckpoint);
+      // ── REAL USER: Live IMAP Fetch (ML & Gemini BYPASSED) ──
+      const cachedPassword = sessionStorage.getItem("mm_password");
+      if (!cachedPassword) {
+        setSyncStatus("error");
+        toast.error("Session expired", {
+          description: "Please log out and reconnect your webmail credentials to sync.",
+        });
+        setTimeout(() => setSyncStatus("idle"), 3000);
+        return;
+      }
 
-      if (newRawEmails.length === 0) {
+      setSyncStatus("fetching");
+      const result = await fetchRealEmails({
+        data: {
+          email: user.email!,
+          password: cachedPassword,
+        }
+      });
+
+      if (!result.success || !result.emails) {
+        setSyncStatus("error");
+        toast.error("Sync failed", {
+          description: result.error || "Unable to fetch emails from your webmail server.",
+        });
+        setTimeout(() => setSyncStatus("idle"), 3000);
+        return;
+      }
+
+      const liveEmails = result.emails;
+
+      if (liveEmails.length === 0) {
         setSyncStatus("complete");
-        toast.info("Sync complete. No new emails found.");
+        toast.info("Sync complete. Your inbox is empty.");
         setTimeout(() => setSyncStatus("idle"), 2000);
         return;
       }
 
-      setSyncProgress({ total: newRawEmails.length, processed: 0 });
+      setSyncProgress({ total: liveEmails.length, processed: 0 });
 
-      // 3. Classify and summarize each fetched email
+      // Build Email objects — BYPASS ML model and Gemini, use local keyword classifier only
+      const existingIds = new Set(emails.map((e) => e.id));
       const processedEmails: Email[] = [];
       let importantCount = 0;
       let lowPriorityCount = 0;
-      let datesCount = 0;
 
-      for (let i = 0; i < newRawEmails.length; i++) {
-        const item = newRawEmails[i];
-        
+      for (let i = 0; i < liveEmails.length; i++) {
+        const item = liveEmails[i];
+
+        // Skip duplicates
+        if (existingIds.has(item.id)) {
+          setSyncProgress((prev) => ({ ...prev, processed: i + 1 }));
+          continue;
+        }
+
         setSyncStatus("classifying");
+        // Local keyword-based classification (bypass ML model)
         const category = classifyEmail(item.subject, item.body);
         if (category === "important") importantCount++;
         else lowPriorityCount++;
 
-        setSyncStatus("summarizing");
-        await new Promise((r) => setTimeout(r, 250)); // smooth pipeline visual delay
-        
-        const cleanedBody = cleanEmailBody(item.body);
-        const aiTriage = summarizeWithGemini(item.subject, item.sender, cleanedBody, category);
-        datesCount += aiTriage.extractedDates.length;
+        // Truncate body for summary (bypass Gemini)
+        const bodyText = (item.body || "").replace(/<[^>]*>/g, "").trim();
+        const summary = bodyText.length > 180
+          ? bodyText.substring(0, 180) + "..."
+          : bodyText || "(No content preview)";
 
         const completeEmail: Email = {
           id: item.id,
           sender: item.sender,
           senderEmail: item.senderEmail,
           subject: item.subject,
-          bodySnippet: item.body, // Raw body preserved
+          bodySnippet: item.body,
           receivedAt: item.receivedAt,
           category,
-          kind: aiTriage.kind,
-          summary: aiTriage.summary,
-          extractedDates: aiTriage.extractedDates,
-          tags: aiTriage.tags,
-          unread: true, // mark newly fetched emails unread
-          priorityScore: aiTriage.priorityScore,
+          kind: "academic",
+          summary,
+          extractedDates: [],
+          tags: ["Live Inbox"],
+          unread: true,
+          priorityScore: category === "important" ? 75 : 25,
         };
 
         processedEmails.push(completeEmail);
         setSyncProgress((prev) => ({ ...prev, processed: i + 1 }));
       }
 
-      // 4. Prepend and sort merged list
+      if (processedEmails.length === 0) {
+        setSyncStatus("complete");
+        toast.info("Sync complete. No new emails found.");
+        setTimeout(() => setSyncStatus("idle"), 2000);
+        return;
+      }
+
+      // Merge and sort
       const mergedList = [...processedEmails, ...emails];
       mergedList.sort((a, b) => +new Date(b.receivedAt) - +new Date(a.receivedAt));
       setEmails(mergedList);
 
       const newCheckpointTime = +new Date();
 
-      if (isDemoMode) {
-        localStorage.setItem("mm_emails_demo_user", JSON.stringify(mergedList));
-        sessionStorage.setItem("mm_checkpoint_demo_user", String(newCheckpointTime));
-      } else if (!firebaseConfigured) {
+      if (!firebaseConfigured) {
         localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(mergedList));
         localStorage.setItem(`mm_checkpoint_${user.uid}`, String(newCheckpointTime));
       } else {
@@ -444,7 +555,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setSyncStatus("complete");
       toast.success("Sync complete", {
-        description: `${newRawEmails.length} new email${newRawEmails.length === 1 ? "" : "s"} triaged successfully (${importantCount} important, ${lowPriorityCount} low-priority, ${datesCount} dates extracted).`,
+        description: `${processedEmails.length} live email${processedEmails.length === 1 ? "" : "s"} fetched (${importantCount} important, ${lowPriorityCount} low-priority).`,
       });
 
       setTimeout(() => setSyncStatus("idle"), 2500);
@@ -525,20 +636,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const connectGoogleCalendar = async () => {
     if (!user) return;
-    toast.promise(
-      new Promise((resolve) => setTimeout(resolve, 1500)),
-      {
-        loading: "Redirecting to Google secure authentication...",
-        success: () => {
-          savePreferences({
-            calendarConnected: true,
-            calendarEmail: `${user.email?.split("@")[0] || "student"}@gmail.com`
-          });
-          return "Google Calendar successfully connected!";
-        },
-        error: "Google Calendar authentication failed.",
+    try {
+      const res = await checkCalendarConnection();
+      if (res.connected) {
+        await savePreferences({
+          calendarConnected: true,
+          calendarEmail: res.email || user.email || ""
+        });
+        toast.success("Google Calendar connected!", {
+          description: `Linked to ${res.email || user.email}`,
+        });
+      } else {
+        toast.error("Google Calendar not set up", {
+          description: "Run 'python3 calendar_sync.py --auth' in the mail-fetcher-backend folder to authenticate your Google account first.",
+          duration: 8000,
+        });
       }
-    );
+    } catch (err) {
+      console.error("Google Calendar connection check failed:", err);
+      toast.error("Calendar connection failed", {
+        description: "Could not verify Google Calendar authentication. Check your backend server.",
+      });
+    }
   };
 
   const disconnectGoogleCalendar = async () => {
