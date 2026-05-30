@@ -114,8 +114,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (localEmails) {
             setEmails(JSON.parse(localEmails));
           } else {
-            localStorage.setItem(`mm_emails_${storedUid}`, JSON.stringify(defaultEmails));
-            setEmails(defaultEmails);
+            localStorage.setItem(`mm_emails_${storedUid}`, JSON.stringify([]));
+            setEmails([]);
           }
           const localPrefs = localStorage.getItem(`mm_prefs_${storedUid}`);
           if (localPrefs) {
@@ -172,17 +172,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       emailsRef,
       async (snapshot) => {
         if (snapshot.empty) {
-          // New account: seed default emails database into Firestore
-          try {
-            const batch = writeBatch(db!);
-            defaultEmails.forEach((email) => {
-              const emailDoc = doc(db!, "users", user.uid, "emails", email.id);
-              batch.set(emailDoc, email);
-            });
-            await batch.commit();
-          } catch (err) {
-            console.error("Failed to seed default emails to Firestore:", err);
-          }
+          // New account: start with a clean, empty inbox!
+          setEmails([]);
         } else {
           const list: Email[] = [];
           snapshot.forEach((doc) => {
