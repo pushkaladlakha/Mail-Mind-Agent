@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StatCard } from "@/components/StatCard";
 import { EmailCard } from "@/components/EmailCard";
 import { DeadlineList } from "@/components/DeadlineList";
@@ -189,18 +189,24 @@ function SyncButton({
   isDemoMode: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [fetchCount, setFetchCount] = useState(15);
+  const [fetchCount, setFetchCount] = useState<number | "">(15);
   const disabled = syncStatus !== "idle";
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const handleSync = (mode: SyncMode) => {
+  const handleSync = (mode: SyncMode, customCount?: number) => {
     setOpen(false);
-    syncMail(mode, fetchCount);
+    const finalCount = customCount !== undefined ? customCount : (typeof fetchCount === "number" ? fetchCount : 15);
+    syncMail(mode, finalCount);
   };
 
   // Close dropdown on click outside
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
+    const close = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
   }, [open]);
@@ -227,7 +233,7 @@ function SyncButton({
   }
 
   return (
-    <div className="relative" onClick={(e) => e.stopPropagation()}>
+    <div ref={dropdownRef} className="relative">
       <div className="flex items-stretch">
         <button
           onClick={() => handleSync("since_last")}
@@ -246,32 +252,60 @@ function SyncButton({
 
       {open && (
         <div className="absolute right-0 top-full mt-2 w-64 bg-surface border border-border rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+          {/* Option A: Sync New (Since Last) */}
           <button
             onClick={() => handleSync("since_last")}
-            className="w-full text-left px-4 py-3 text-xs hover:bg-muted transition-colors flex items-start gap-3"
+            className="w-full text-left px-4 py-3 text-xs hover:bg-muted transition-colors flex items-start gap-3 border-b border-border"
           >
             <RefreshCw className="size-4 text-accent shrink-0 mt-0.5" />
             <div>
-              <div className="font-bold text-foreground">Fetch new emails</div>
-              <div className="text-muted-foreground mt-0.5">Only emails received since your last sync</div>
+              <div className="font-bold text-foreground">Sync New Mails</div>
+              <div className="text-muted-foreground mt-0.5">Incremental sync: Fetches only new emails since last read (Defaults to top 100 for empty inbox).</div>
             </div>
           </button>
-          <div className="border-t border-border" />
+
+          {/* Option B: Preset Fetch Top 100 */}
+          <button
+            onClick={() => handleSync("latest_count", 100)}
+            className="w-full text-left px-4 py-3 text-xs hover:bg-muted transition-colors flex items-start gap-3 border-b border-border"
+          >
+            <Mail className="size-4 text-accent shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold text-foreground">Sync Top 100 Mails</div>
+              <div className="text-muted-foreground mt-0.5">Quickly fetches the 100 most recent emails. Safe for brand new accounts.</div>
+            </div>
+          </button>
+
+          {/* Option C: Custom Fetch N */}
           <div className="px-4 py-3 space-y-2">
             <div className="flex items-start gap-3">
               <Mail className="size-4 text-accent shrink-0 mt-0.5" />
               <div className="flex-1">
-                <div className="text-xs font-bold text-foreground">Fetch latest N emails</div>
-                <div className="text-[10px] text-muted-foreground mt-0.5">Already-read emails are automatically skipped</div>
+                <div className="text-xs font-bold text-foreground">Fetch Custom Count</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Specify exactly how many recent emails to load (max 500)</div>
               </div>
             </div>
             <div className="flex items-center gap-2 ml-7">
               <input
                 type="number"
                 min={1}
-                max={100}
+                max={500}
+                placeholder="15"
                 value={fetchCount}
-                onChange={(e) => setFetchCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "") {
+                    setFetchCount("");
+                  } else {
+                    const parsed = parseInt(val, 10);
+                    if (!isNaN(parsed)) {
+                      setFetchCount(Math.max(1, Math.min(500, parsed)));
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  if (fetchCount === "") setFetchCount(15);
+                }}
                 className="w-16 bg-background border border-border rounded-lg px-2 py-1.5 text-xs font-mono text-center focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
               />
               <button

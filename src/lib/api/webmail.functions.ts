@@ -28,6 +28,11 @@ export const verifyWebmailCredentials = createServerFn({ method: "POST" })
       return { success: true };
     }
 
+    // Empty Test Account
+    if (username === "newinbox" && password === "admin123") {
+      return { success: true };
+    }
+
     try {
       const success = await new Promise<boolean>((resolve, reject) => {
         const socket = tls.connect({
@@ -129,7 +134,7 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
     imapPort: z.number().default(993),
     mode: z.enum(["since_last", "latest_count"]).default("latest_count"),
     lastUid: z.number().optional(),   // highest UID already fetched
-    count: z.number().min(1).max(100).default(15),
+    count: z.number().min(1).max(500).default(15),
   }))
   .handler(async ({ data }) => {
     const { email, password, imapHost, imapPort, mode, lastUid, count } = data;
@@ -141,6 +146,16 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
     }
     if (username === "offline") {
       return { success: false, error: "Connection to webmail timed out" };
+    }
+
+    // Empty Test Account
+    if (username === "newinbox" && password === "admin123") {
+      return {
+        success: true,
+        emails: [],
+        highestUid: 0,
+        totalInbox: 0,
+      };
     }
 
     // Admin Developer Bypass Account

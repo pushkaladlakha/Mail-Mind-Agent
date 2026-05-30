@@ -458,7 +458,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           password: cachedPassword,
           mode,
           lastUid: currentLastUid > 0 ? currentLastUid : undefined,
-          count,
+          count: currentLastUid === 0 && mode === "since_last" ? 100 : count,
         }
       });
 
