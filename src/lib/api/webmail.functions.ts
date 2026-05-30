@@ -210,7 +210,13 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
         logger: false
       });
 
-      await client.connect();
+      // Wrap connection in a 12-second timeout to prevent hanging on unreachable servers
+      await Promise.race([
+        client.connect(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Connection to college webmail server timed out.")), 12000)
+        )
+      ]);
       
       const lock = await client.getMailboxLock("INBOX");
       const emailsList: any[] = [];

@@ -128,10 +128,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Check standard offline fallback
-      if (!firebaseConfigured) {
-        const storedUser = sessionStorage.getItem("mm_user");
-        const storedUid = sessionStorage.getItem("mm_uid");
+      // Check standard offline fallback OR mock bypass accounts (starts with uid_)
+      const storedUser = sessionStorage.getItem("mm_user");
+      const storedUid = sessionStorage.getItem("mm_uid");
+      const isMockBypassUid = storedUid?.startsWith("uid_");
+
+      if (!firebaseConfigured || isMockBypassUid) {
         if (storedUser && storedUid) {
           setUser({ email: storedUser, uid: storedUid });
           const localEmails = localStorage.getItem(`mm_emails_${storedUid}`);
@@ -173,6 +175,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      // Prioritize bypass mock sessions
+      const storedUid = sessionStorage.getItem("mm_uid");
+      if (storedUid?.startsWith("uid_")) {
+        setLoading(false);
+        return;
+      }
+
       if (firebaseUser) {
         setUser({ email: firebaseUser.email, uid: firebaseUser.uid });
         setIsDemoMode(false);
@@ -191,7 +200,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Sync real-time Firestore database when a real Firebase user logs in
   useEffect(() => {
     if (isDemoMode) return; // Skip Firestore syncing in demo mode
-    if (!firebaseConfigured || !user || !db) return;
+    if (!firebaseConfigured || !user || !db || user.uid.startsWith("uid_")) return;
 
     setLoading(true);
     const emailsRef = collection(db, "users", user.uid, "emails");
@@ -239,16 +248,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 
     // Listen to real-time settings doc
-    const unsubscribeSettings = onSnapshot(settingsRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setPreferences(docSnap.data() as UserPreferences);
-      } else {
-        // Seed default preferences in Firestore
-        setDoc(settingsRef, DEFAULT_PREFS).catch((err) =>
-          console.error("Failed to seed default settings:", err)
-        );
+    const unsubscribeSettings = onSnapshot(
+      settingsRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setPreferences(docSnap.data() as UserPreferences);
+        } else {
+          // Seed default preferences in Firestore
+          setDoc(settingsRef, DEFAULT_PREFS).catch((err) =>
+            console.error("Failed to seed default settings:", err)
+          );
+        }
+      },
+      (err) => {
+        console.error("Firestore settings snapshot error:", err);
       }
-    });
+    );
 
     return () => {
       unsubscribeEmails();
@@ -478,7 +493,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Load lastFetchedUid from storage if not already set
       let currentLastUid = lastFetchedUid;
       if (currentLastUid === 0) {
-        if (!firebaseConfigured) {
+        if (!firebaseConfigured || user.uid.startsWith("uid_")) {
           const storedUid = localStorage.getItem(`mm_lastuid_${user.uid}`);
           if (storedUid) currentLastUid = parseInt(storedUid, 10) || 0;
         } else if (db) {
@@ -518,7 +533,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Still update the UID tracker even if no new emails
         if (serverHighestUid > currentLastUid) {
           setLastFetchedUid(serverHighestUid);
-          if (!firebaseConfigured) {
+          if (!firebaseConfigured || user.uid.startsWith("uid_")) {
             localStorage.setItem(`mm_lastuid_${user.uid}`, String(serverHighestUid));
           } else if (db) {
             setDoc(doc(db, "users", user.uid, "settings", "lastuid"), { uid: serverHighestUid }).catch(() => {});
@@ -582,7 +597,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Save the highest UID for next sync
       if (serverHighestUid > currentLastUid) {
         setLastFetchedUid(serverHighestUid);
-        if (!firebaseConfigured) {
+        if (!firebaseConfigured || user.uid.startsWith("uid_")) {
           localStorage.setItem(`mm_lastuid_${user.uid}`, String(serverHighestUid));
         } else if (db) {
           setDoc(doc(db, "users", user.uid, "settings", "lastuid"), { uid: serverHighestUid }).catch(() => {});
@@ -603,7 +618,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const newCheckpointTime = +new Date();
 
-      if (!firebaseConfigured) {
+      if (!firebaseConfigured || user.uid.startsWith("uid_")) {
         localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(mergedList));
         localStorage.setItem(`mm_checkpoint_${user.uid}`, String(newCheckpointTime));
       } else {
@@ -648,7 +663,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (!firebaseConfigured) {
+    if (!firebaseConfigured || user.uid.startsWith("uid_")) {
       localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(updated));
       return;
     }
@@ -669,7 +684,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (!firebaseConfigured) {
+    if (!firebaseConfigured || user.uid.startsWith("uid_")) {
       localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(updated));
       return;
     }
@@ -701,7 +716,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (!firebaseConfigured) {
+    if (!firebaseConfigured || user.uid.startsWith("uid_")) {
       localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(updated));
       if (isAlreadySoftDeleted) toast.success("Email permanently deleted");
       return;
@@ -732,7 +747,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (!firebaseConfigured) {
+    if (!firebaseConfigured || user.uid.startsWith("uid_")) {
       localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(updated));
       toast.success("All emails marked as deleted");
       return;
@@ -767,7 +782,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (!firebaseConfigured) {
+    if (!firebaseConfigured || user.uid.startsWith("uid_")) {
       localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(updated));
       toast.success("All deleted emails recovered");
       return;
@@ -833,7 +848,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (!firebaseConfigured) {
+    if (!firebaseConfigured || user.uid.startsWith("uid_")) {
       localStorage.setItem(`mm_prefs_${user.uid}`, JSON.stringify(updatedPrefs));
       return;
     }
