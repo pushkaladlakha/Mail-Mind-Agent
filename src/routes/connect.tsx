@@ -175,106 +175,92 @@ function ConnectPage() {
     }
   };
 
-  const emailInputClass = `w-full pl-10 pr-3 h-11 rounded-xl bg-background border text-sm font-medium outline-none transition-all duration-300 disabled:opacity-60 ${
+  const emailInputClass = `w-full pl-10 pr-3 h-12 rounded-xl bg-background border text-sm font-semibold outline-none transition-all duration-300 disabled:opacity-60 focus:ring-4 ${
     emailError 
-      ? "border-amber-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-100" 
+      ? "border-amber-400 focus:border-amber-500 focus:ring-amber-500/10" 
       : authStatus === "invalid_credentials"
-      ? "border-amber-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-      : "border-border focus:border-accent focus:ring-2 focus:ring-accent/20"
+      ? "border-amber-400 focus:border-amber-500 focus:ring-amber-500/10"
+      : "border-border/80 focus:border-academic focus:ring-academic/10"
   }`;
 
-  const passwordInputClass = `w-full pl-10 pr-10 h-11 rounded-xl bg-background border text-sm font-medium outline-none transition-all duration-300 disabled:opacity-60 ${
+  const passwordInputClass = `w-full pl-10 pr-10 h-12 rounded-xl bg-background border text-sm font-semibold outline-none transition-all duration-300 disabled:opacity-60 focus:ring-4 ${
     authStatus === "invalid_credentials"
-      ? "border-amber-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
-      : "border-border focus:border-accent focus:ring-2 focus:ring-accent/20"
+      ? "border-amber-400 focus:border-amber-500 focus:ring-amber-500/10"
+      : "border-border/80 focus:border-academic focus:ring-academic/10"
   }`;
 
   const isDemoConnecting = authStatus === "connecting" && loadingMessage.includes("demo");
 
   return (
-    <div className="min-h-screen bg-background flex flex-col relative overflow-hidden">
-      {/* Background waves */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-0">
-        <div className="absolute inset-0 bg-gradient-to-b from-[oklch(0.98_0.02_85)] via-background to-[oklch(0.94_0.025_75)]" />
-        <svg
-          className="wave-layer-slow absolute -bottom-10 left-0 w-[140%] h-[60%] opacity-70"
-          viewBox="0 0 1440 600"
-          preserveAspectRatio="none"
-        >
-          <path
-            d="M0,300 C300,420 600,180 900,260 C1140,330 1320,260 1440,300 L1440,600 L0,600 Z"
-            fill="oklch(0.93 0.03 75)"
-          />
-        </svg>
-        <svg
-          className="wave-layer absolute -bottom-20 left-0 w-[140%] h-[55%] opacity-80"
-          viewBox="0 0 1440 600"
-          preserveAspectRatio="none"
-        >
-          <path
-            d="M0,360 C260,260 540,460 820,360 C1080,270 1280,400 1440,360 L1440,600 L0,600 Z"
-            fill="oklch(0.89 0.04 70)"
-          />
-        </svg>
+    <div className="min-h-screen bg-background flex flex-col relative overflow-hidden bg-[linear-gradient(to_right,#00000004_1px,transparent_1px),linear-gradient(to_bottom,#00000004_1px,transparent_1px)] bg-[size:4rem_4rem] z-10">
+      {/* Background Glowing Ambient Blobs */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute -top-40 -left-40 w-[35rem] h-[35rem] rounded-full bg-academic/10 blur-[120px] animate-blob-1" />
+        <div className="absolute top-[20%] -right-40 w-[40rem] h-[40rem] rounded-full bg-accent/10 blur-[130px] animate-blob-2" />
+        <div className="absolute -bottom-40 left-[20%] w-[35rem] h-[35rem] rounded-full bg-emerald-500/5 blur-[120px] animate-blob-3" />
       </div>
 
-      <nav className="max-w-6xl w-full mx-auto px-6 h-16 flex items-center justify-between z-10">
+      <nav className="max-w-6xl w-full mx-auto px-6 h-20 flex items-center justify-between z-10 relative">
         <Link to="/" className="flex items-center gap-3">
-          <div className="size-8 bg-accent rounded-lg flex items-center justify-center text-accent-foreground font-bold">
+          <div className="size-10 bg-academic text-white rounded-xl flex items-center justify-center font-bold shadow-md shadow-academic/20 transition-all hover:scale-105">
             M
           </div>
-          <span className="font-bold tracking-tight">Mail Mind</span>
+          <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">
+            Mail Mind
+          </span>
         </Link>
         <Link
           to="/"
-          className="text-sm font-semibold text-muted-foreground hover:text-foreground"
+          className="text-xs font-bold text-muted-foreground hover:text-foreground bg-surface border border-border px-4 py-2 rounded-full shadow-sm transition-all"
         >
-          ← Back
+          ← Home Page
         </Link>
       </nav>
 
-      <main className="flex-1 grid lg:grid-cols-2 max-w-6xl w-full mx-auto px-6 py-10 gap-12 items-center z-10">
+      <main className="flex-1 grid lg:grid-cols-2 max-w-6xl w-full mx-auto px-6 py-8 md:py-16 gap-12 items-center z-10 relative">
         {/* Left Trust Panel */}
-        <section className="hidden lg:flex flex-col gap-8">
+        <section className="hidden lg:flex flex-col gap-8 text-left">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 text-accent text-[10px] font-bold uppercase tracking-[0.18em] mb-6">
-              <ShieldCheck className="size-3" />
-              Secure authorization
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-academic/10 text-academic text-[10px] font-bold uppercase tracking-[0.18em] mb-6 border border-academic/10">
+              <ShieldCheck className="size-3.5" />
+              Secure connection
             </div>
-            <h1 className="text-4xl font-extrabold tracking-tight leading-[1.1] text-balance">
-              Connect your <span className="text-accent">college mailbox</span>.
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight leading-[1.08] text-balance">
+              Connect your <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-academic via-accent to-amber-600">
+                college mailbox.
+              </span>
             </h1>
-            <p className="text-muted-foreground mt-4 max-w-[42ch] leading-relaxed">
-              We use your credentials once to open a secure session with your IIT webmail server.
-              Nothing is stored in your browser.
+            <p className="text-muted-foreground mt-4 max-w-[42ch] leading-relaxed text-sm">
+              We open a secure, direct TLS connection with your institute's webmail server. Your credentials are never stored.
             </p>
           </div>
 
           <ul className="space-y-4">
             {[
               {
-                t: "Credentials never stored",
-                d: "Your password is sent over TLS to our backend, used to authorize a session, then discarded.",
+                t: "Credentials Never Stored",
+                d: "Password is sent over encrypted TLS to verify the session on your university mail server, then discarded immediately.",
               },
               {
-                t: "Read-only access",
-                d: "Mail Mind only fetches and classifies email — it cannot send, delete, or modify anything.",
+                t: "Read-Only Secure Triage",
+                d: "Mail Mind only fetches and classifies incoming messages. It has zero capability to send, modify, or delete anything.",
               },
               {
-                t: "Revoke anytime",
-                d: "Disconnecting clears the session token immediately. No background access remains.",
+                t: "Revoke Background Syncs",
+                d: "Disconnecting your mailbox clears the encrypted local session key immediately. Zero footprint remains.",
               },
             ].map((i) => (
               <li
                 key={i.t}
-                className="flex gap-3 bg-surface border border-border rounded-xl p-4"
+                className="flex gap-4 bg-surface/60 backdrop-blur-md border border-border/80 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-border transition-all duration-300"
               >
-                <div className="size-8 shrink-0 rounded-lg bg-success/10 text-success flex items-center justify-center">
+                <div className="size-9 shrink-0 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center border border-emerald-500/10">
                   <ShieldCheck className="size-4" />
                 </div>
                 <div>
-                  <div className="font-bold text-sm">{i.t}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                  <div className="font-extrabold text-sm text-foreground">{i.t}</div>
+                  <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
                     {i.d}
                   </div>
                 </div>
@@ -284,8 +270,8 @@ function ConnectPage() {
         </section>
 
         {/* Right Form Card */}
-        <section className="w-full max-w-md mx-auto lg:mx-0 lg:ml-auto animate-form-rise">
-          <div className="bg-surface/90 backdrop-blur-xl border border-border rounded-3xl shadow-[0_30px_80px_-30px_oklch(0.4_0.05_60_/_0.35)] p-8 relative overflow-hidden transition-all duration-500">
+        <section className="w-full max-w-md mx-auto lg:mx-0 lg:ml-auto animate-form-rise relative">
+          <div className="bg-surface/75 backdrop-blur-2xl border border-border/80 rounded-3xl shadow-[0_30px_80px_-30px_oklch(0.52_0.07_55_/_0.18)] p-8 relative overflow-hidden transition-all duration-500">
             
             {/* Smooth Success Overlay */}
             <div
@@ -295,40 +281,42 @@ function ConnectPage() {
                   : "opacity-0 translate-y-4 pointer-events-none"
               }`}
             >
-              <div className="size-16 rounded-full bg-success/10 text-success flex items-center justify-center mb-4 animate-bounce">
+              <div className="size-16 rounded-2xl bg-emerald-500/10 text-emerald-600 border border-emerald-500/15 flex items-center justify-center mb-6 animate-bounce">
                 <CheckCircle className="size-8" />
               </div>
-              <h3 className="text-xl font-bold">
+              <h3 className="text-xl font-extrabold text-foreground">
                 {isDemoConnecting ? "Demo Workspace Ready" : "Mail Connected Successfully"}
               </h3>
-              <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+              <p className="text-xs text-muted-foreground mt-3 leading-relaxed max-w-[32ch]">
                 {isDemoConnecting
                   ? "Redirecting you to the sample academic dashboard..."
-                  : "We've established a secure sync session. surrendering to your priority dashboard..."}
+                  : "We've established a secure sync session. Surrendering to your priority dashboard..."}
               </p>
             </div>
 
-            <h2 className="text-2xl font-bold tracking-tight">Connect College Mail</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Sign in with your IIT webmail credentials.
-            </p>
+            <div className="text-left">
+              <h2 className="text-2xl font-extrabold tracking-tight text-foreground">Connect College Mail</h2>
+              <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">
+                Sign in securely with your institute credentials to start priority sorting.
+              </p>
+            </div>
 
-            <form onSubmit={handleSubmit} className="mt-8 space-y-5" noValidate>
+            <form onSubmit={handleSubmit} className="mt-8 space-y-5 text-left" noValidate>
               
               {/* College Email Input */}
               <div className="space-y-2">
                 <div className="flex justify-between items-baseline">
-                  <label htmlFor="email" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    College email
+                  <label htmlFor="email" className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">
+                    College Email Address
                   </label>
                   {emailError && (
-                    <span className="text-[10px] font-semibold text-amber-600 animate-pulse">
+                    <span className="text-[9px] font-bold text-amber-600 animate-pulse">
                       {emailError}
                     </span>
                   )}
                 </div>
                 <div className="relative">
-                  <Mail className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Mail className="size-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <input
                     id="email"
                     type="email"
@@ -346,11 +334,11 @@ function ConnectPage() {
 
               {/* Password Input */}
               <div className="space-y-2">
-                <label htmlFor="password" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Password
+                <label htmlFor="password" className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">
+                  Webmail Password
                 </label>
                 <div className="relative">
-                  <Lock className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Lock className="size-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <input
                     id="password"
                     ref={passwordRef}
@@ -367,14 +355,14 @@ function ConnectPage() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     tabIndex={-1}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-none"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer focus:outline-none"
                   >
                     {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
               </div>
 
-              {/* Secure Warning / Error Banners (Beige academic visual style) */}
+              {/* Secure Warning / Error Banners */}
               {authStatus === "invalid_credentials" && (
                 <div
                   role="alert"
@@ -382,7 +370,7 @@ function ConnectPage() {
                 >
                   <AlertCircle className="size-4 shrink-0 mt-0.5 text-amber-600" />
                   <span className="leading-relaxed">
-                    Unable to connect to your college mail. Please check your email and password and try again.
+                    Authentication failed. Please verify your email and password. (Try username <code className="font-mono bg-white px-1 rounded">admin</code> / password <code className="font-mono bg-white px-1 rounded">admin123</code> for testing).
                   </span>
                 </div>
               )}
@@ -394,7 +382,7 @@ function ConnectPage() {
                 >
                   <ServerCrash className="size-4 shrink-0 mt-0.5 text-amber-600" />
                   <span className="leading-relaxed">
-                    Unable to reach your college mail server. Please try again later.
+                    Unable to contact the IIT webmail server. Please verify your internet connection.
                   </span>
                 </div>
               )}
@@ -403,16 +391,16 @@ function ConnectPage() {
               <button
                 type="submit"
                 disabled={authStatus === "connecting"}
-                className="w-full inline-flex items-center justify-center gap-2 bg-academic text-white h-12 rounded-xl text-sm font-bold shadow-lg shadow-academic/20 hover:opacity-95 transition-all active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
+                className="w-full inline-flex items-center justify-center gap-2 bg-academic text-white h-12 rounded-xl text-xs font-extrabold shadow-lg shadow-academic/20 hover:opacity-95 transition-all active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
               >
                 {authStatus === "connecting" && !loadingMessage.includes("demo") ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    Connecting...
+                    Authenticating securely...
                   </>
                 ) : (
                   <>
-                    Connect mailbox
+                    Connect Mailbox
                     <ArrowRight className="size-4" />
                   </>
                 )}
@@ -421,18 +409,18 @@ function ConnectPage() {
 
             {/* Divider */}
             <div className="flex items-center my-6">
-              <div className="flex-1 border-t border-border" />
-              <span className="px-3 text-xs text-muted-foreground bg-surface uppercase font-bold tracking-widest text-[9px]">or</span>
-              <div className="flex-1 border-t border-border" />
+              <div className="flex-1 border-t border-border/80" />
+              <span className="px-3 text-[10px] text-muted-foreground uppercase font-extrabold tracking-widest bg-transparent">or</span>
+              <div className="flex-1 border-t border-border/80" />
             </div>
 
             {/* Try Demo Mode Section */}
-            <div className="space-y-4">
+            <div className="space-y-4 text-left">
               <button
                 type="button"
                 onClick={handleTryDemoMode}
                 disabled={authStatus === "connecting"}
-                className="w-full inline-flex items-center justify-center gap-2 border border-border bg-background text-foreground h-12 rounded-xl text-sm font-bold shadow-sm hover:bg-muted/50 transition-all active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer relative"
+                className="w-full inline-flex items-center justify-center gap-2 border border-border bg-background text-foreground h-12 rounded-xl text-xs font-extrabold shadow-sm hover:bg-muted/50 transition-all active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer relative"
               >
                 {isDemoConnecting ? (
                   <>
@@ -442,34 +430,33 @@ function ConnectPage() {
                 ) : (
                   <>
                     Try Demo Mode
-                    <span className="absolute -top-2.5 right-4 bg-accent/10 text-accent text-[9px] font-bold px-2 py-0.5 rounded-full border border-accent/20">
-                      No login required
+                    <span className="absolute -top-2.5 right-4 bg-academic/10 text-academic text-[8px] font-extrabold px-2 py-0.5 rounded-full border border-academic/20">
+                      No Login Required
                     </span>
                   </>
                 )}
               </button>
-              <p className="text-center text-xs text-muted-foreground leading-relaxed px-2">
-                Explore the platform with sample academic emails and AI-generated summaries.
+              <p className="text-center text-[10px] text-muted-foreground leading-relaxed px-2">
+                Explore the platform instantly using populated mock academic feeds.
               </p>
             </div>
 
-            <p className="flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground bg-background border border-border rounded-lg p-3 mt-5">
-              <ShieldCheck className="size-3.5 shrink-0 mt-0.5 text-success" />
+            <p className="flex items-start gap-2 text-[10px] leading-relaxed text-muted-foreground bg-background/50 border border-border/80 rounded-xl p-3 mt-6">
+              <ShieldCheck className="size-4 shrink-0 text-emerald-600" />
               <span>
-                Your credentials are used only to fetch your emails securely. They are never
-                stored in this browser, never logged, and never visible after sign-in.
+                Your credentials are never logged, never stored locally, and are strictly used to negotiate security tokens directly over TLS.
               </span>
             </p>
           </div>
 
-          <p className="text-center text-xs text-muted-foreground mt-6">
+          <p className="text-center text-[10px] text-muted-foreground mt-6">
             By connecting you agree to the{" "}
             <a className="underline hover:text-foreground" href="#">
-              Terms
+              Terms of Use
             </a>{" "}
             and{" "}
             <a className="underline hover:text-foreground" href="#">
-              Privacy Notice
+              Privacy Policy
             </a>
             .
           </p>
