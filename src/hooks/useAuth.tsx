@@ -24,6 +24,7 @@ import {
   fetchMailbox,
 } from "@/lib/email-service";
 import { toast } from "sonner";
+import { checkCalendarConnection } from "@/lib/api/webmail.functions";
 
 export interface UserPreferences {
   summaryLength: number; // 1: Short, 2: Medium, 3: Detailed
@@ -209,6 +210,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user, isDemoMode]);
 
+  // Synchronize secure server-side Google Calendar connection state dynamically
+  useEffect(() => {
+    if (!user || isDemoMode) return;
+
+    const checkCalendar = async () => {
+      try {
+        const res = await checkCalendarConnection();
+        if (res.connected) {
+          savePreferences({
+            calendarConnected: true,
+            calendarEmail: res.email
+          });
+        } else {
+          savePreferences({
+            calendarConnected: false,
+            calendarEmail: ""
+          });
+        }
+      } catch (err) {
+        console.error("Failed to check server Google Calendar connection:", err);
+      }
+    };
+
+    checkCalendar();
+  }, [user, isDemoMode]);
+
   // Auth Operations
   const enterDemoMode = async () => {
     try {
@@ -255,8 +282,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (localEmails) {
         setEmails(JSON.parse(localEmails));
       } else {
-        localStorage.setItem(`mm_emails_${dummyUid}`, JSON.stringify(defaultEmails));
-        setEmails(defaultEmails);
+        localStorage.setItem(`mm_emails_${dummyUid}`, JSON.stringify([]));
+        setEmails([]);
       }
       
       const localPrefs = localStorage.getItem(`mm_prefs_${dummyUid}`);

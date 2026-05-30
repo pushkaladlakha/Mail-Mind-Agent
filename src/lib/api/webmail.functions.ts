@@ -82,3 +82,25 @@ export const verifyWebmailCredentials = createServerFn({ method: "POST" })
       return { success: false, error: error.message || "Failed to connect to college webmail server." };
     }
   });
+
+export const checkCalendarConnection = createServerFn({ method: "GET" })
+  .handler(async () => {
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+      
+      const tokenPath = path.join(process.cwd(), "mail-fetcher-backend", "token.json");
+      
+      if (fs.existsSync(tokenPath)) {
+        const raw = fs.readFileSync(tokenPath, "utf-8");
+        const data = JSON.parse(raw);
+        // Look for the user's authenticated email account inside token.json (if stored)
+        const email = data.account || "pushkaladlakha@gmail.com";
+        return { connected: true, email };
+      }
+      return { connected: false };
+    } catch (err) {
+      console.error("Failed to check Google Calendar token.json:", err);
+      return { connected: false };
+    }
+  });
