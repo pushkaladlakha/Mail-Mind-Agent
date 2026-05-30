@@ -645,22 +645,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const deleteEmail = async (emailId: string) => {
     if (!user) return;
 
-    const updated = emails.map((e) => e.id === emailId ? { ...e, deleted: true } : e);
+    const targetEmail = emails.find((e) => e.id === emailId);
+    const isAlreadySoftDeleted = targetEmail?.deleted === true;
+
+    let updated: Email[];
+    if (isAlreadySoftDeleted) {
+      // 1. Permanent Delete: Remove completely from local state
+      updated = emails.filter((e) => e.id !== emailId);
+    } else {
+      // 2. Soft Delete: Flag as deleted
+      updated = emails.map((e) => e.id === emailId ? { ...e, deleted: true } : e);
+    }
     setEmails(updated);
 
     if (isDemoMode) {
       localStorage.setItem(`mm_emails_demo_user`, JSON.stringify(updated));
+      if (isAlreadySoftDeleted) toast.success("Email permanently deleted (Demo Mode)");
       return;
     }
 
     if (!firebaseConfigured) {
       localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(updated));
+      if (isAlreadySoftDeleted) toast.success("Email permanently deleted");
       return;
     }
 
     if (!db) return;
     const emailRef = doc(db, "users", user.uid, "emails", emailId);
-    await updateDoc(emailRef, { deleted: true });
+
+    if (isAlreadySoftDeleted) {
+      // Permanent Delete in Firestore
+      await deleteDoc(emailRef);
+      toast.success("Email permanently deleted from cloud");
+    } else {
+      // Soft Delete in Firestore
+      await updateDoc(emailRef, { deleted: true });
+    }
   };
 
   const deleteAllEmails = async () => {

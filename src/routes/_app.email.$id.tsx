@@ -184,8 +184,9 @@ function Actions({ email, onDelete }: { email: Email; onDelete: () => void }) {
 
   const handleDelete = async () => {
     try {
+      const wasDeleted = email.deleted;
       await deleteEmail(email.id);
-      toast.success("Email removed from triage");
+      toast.success(wasDeleted ? "Email permanently deleted" : "Email moved to Deleted Trash");
       onDelete();
     } catch (err) {
       toast.error("Failed to delete email");
@@ -197,20 +198,20 @@ function Actions({ email, onDelete }: { email: Email; onDelete: () => void }) {
       {email.extractedDates.length > 0 && (
         <button
           onClick={addToCalendar}
-          className="inline-flex items-center gap-2 bg-academic text-white text-sm font-bold px-4 py-2 rounded-lg hover:opacity-90 active:scale-[0.98]"
+          className="inline-flex items-center gap-2 bg-academic text-white text-sm font-bold px-4 py-2 rounded-lg hover:opacity-90 active:scale-[0.98] cursor-pointer"
         >
           <Calendar className="size-4" /> Add to Calendar
         </button>
       )}
       <button
         onClick={saveNote}
-        className="inline-flex items-center gap-2 bg-surface border border-border text-sm font-bold px-4 py-2 rounded-lg hover:bg-muted"
+        className="inline-flex items-center gap-2 bg-surface border border-border text-sm font-bold px-4 py-2 rounded-lg hover:bg-muted cursor-pointer"
       >
         <StickyNote className="size-4" /> Save Note
       </button>
       <button
         onClick={handleMarkImportant}
-        className={`inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-lg border ${
+        className={`inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-lg border cursor-pointer ${
           isImportant
             ? "bg-accent text-accent-foreground border-accent"
             : "bg-surface border-border hover:bg-muted"
@@ -220,7 +221,7 @@ function Actions({ email, onDelete }: { email: Email; onDelete: () => void }) {
       </button>
       <button
         onClick={handleMarkLowPriority}
-        className={`inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-lg border ${
+        className={`inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-lg border cursor-pointer ${
           isLowPriority
             ? "bg-low text-white border-low"
             : "bg-surface border-border hover:bg-muted"
@@ -231,22 +232,28 @@ function Actions({ email, onDelete }: { email: Email; onDelete: () => void }) {
 
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <button className="ml-auto inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-lg text-destructive hover:bg-destructive/10">
-            <Trash2 className="size-4" /> Delete
+          <button className="ml-auto inline-flex items-center gap-2 text-sm font-bold px-4 py-2 rounded-lg text-destructive hover:bg-destructive/10 cursor-pointer">
+            <Trash2 className="size-4" /> {email.deleted ? "Delete Permanently" : "Delete"}
           </button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this email?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {email.deleted ? "Delete this email permanently?" : "Delete this email?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This removes it from your Mail Mind triage view. The original message stays in
-              your webmail account.
+              {email.deleted
+                ? "This will permanently purge this email's summaries and metadata from your Mail Mind database. Original university webmail remains untouched."
+                : "This moves the email out of active feeds into your Deleted Trash tab. You can recover it at any time."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>
-              Delete
+            <AlertDialogCancel className="cursor-pointer">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete}
+              className={email.deleted ? "bg-destructive text-destructive-foreground hover:bg-destructive/90 cursor-pointer" : "cursor-pointer"}
+            >
+              {email.deleted ? "Delete Permanently" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
