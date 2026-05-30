@@ -135,9 +135,10 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
     mode: z.enum(["since_last", "latest_count"]).default("latest_count"),
     lastUid: z.number().optional(),   // highest UID already fetched
     count: z.number().min(1).max(500).default(15),
+    skipCount: z.number().min(0).default(0),
   }))
   .handler(async ({ data }) => {
-    const { email, password, imapHost, imapPort, mode, lastUid, count } = data;
+    const { email, password, imapHost, imapPort, mode, lastUid, count, skipCount } = data;
     const username = email.split("@")[0];
 
     // Mock bypasses for error simulation accounts
@@ -249,33 +250,37 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
               }
             }
           } else {
-            // MODE B: Fetch latest N emails by sequence number
-            const fetchCount = Math.min(count, totalInbox);
-            const startSeq = Math.max(1, totalInbox - fetchCount + 1);
-            const endSeq = totalInbox;
+            // MODE B: Fetch latest N emails by sequence number (optionally skipping recent ones for historical bottom-sync)
+            const remainingInbox = Math.max(0, totalInbox - (skipCount || 0));
+            const fetchCount = Math.min(count, remainingInbox);
             
-            const messages = client.fetch(`${startSeq}:${endSeq}`, {
-              source: true,
-              envelope: true,
-              uid: true,
-            });
-            
-            for await (const msg of messages) {
-              const parsed = await simpleParser(msg.source);
-              if (msg.uid > highestUid) highestUid = msg.uid;
+            if (fetchCount > 0) {
+              const endSeq = remainingInbox;
+              const startSeq = Math.max(1, remainingInbox - fetchCount + 1);
               
-              // Collision guard: if we have a lastUid, skip emails already fetched
-              if (lastUid && msg.uid <= lastUid) continue;
-              
-              emailsList.push({
-                id: `live-${msg.uid}`,
-                uid: msg.uid,
-                sender: parsed.from?.text || msg.envelope.from?.[0]?.name || "Unknown",
-                senderEmail: parsed.from?.value?.[0]?.address || msg.envelope.from?.[0]?.address || "unknown@iitd.ac.in",
-                subject: parsed.subject || "(No Subject)",
-                body: parsed.text || parsed.html || "(No content preview)",
-                receivedAt: parsed.date?.toISOString() || msg.envelope.date?.toISOString() || new Date().toISOString()
+              const messages = client.fetch(`${startSeq}:${endSeq}`, {
+                source: true,
+                envelope: true,
+                uid: true,
               });
+              
+              for await (const msg of messages) {
+                const parsed = await simpleParser(msg.source);
+                if (msg.uid > highestUid) highestUid = msg.uid;
+                
+                // Collision guard: if we have a lastUid, skip emails already fetched (only relevant if not offset-fetching)
+                if (lastUid && msg.uid <= lastUid && !skipCount) continue;
+                
+                emailsList.push({
+                  id: `live-${msg.uid}`,
+                  uid: msg.uid,
+                  sender: parsed.from?.text || msg.envelope.from?.[0]?.name || "Unknown",
+                  senderEmail: parsed.from?.value?.[0]?.address || msg.envelope.from?.[0]?.address || "unknown@iitd.ac.in",
+                  subject: parsed.subject || "(No Subject)",
+                  body: parsed.text || parsed.html || "(No content preview)",
+                  receivedAt: parsed.date?.toISOString() || msg.envelope.date?.toISOString() || new Date().toISOString()
+                });
+              }
             }
           }
         }

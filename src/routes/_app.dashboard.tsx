@@ -14,12 +14,23 @@ export const Route = createFileRoute("/_app/dashboard")({
   component: Dashboard,
 });
 
-const FILTERS = ["All", "Important", "Low priority", "With dates", "Unread"] as const;
+const FILTERS = ["All", "Important", "Low priority", "With dates", "Unread", "Deleted"] as const;
 type Filter = (typeof FILTERS)[number];
 
 function Dashboard() {
   const navigate = useNavigate();
-  const { user, emails, loading: authLoading, isDemoMode, logOut, syncStatus, syncProgress, syncMail } = useAuth();
+  const { 
+    user, 
+    emails, 
+    loading: authLoading, 
+    isDemoMode, 
+    logOut, 
+    syncStatus, 
+    syncProgress, 
+    syncMail,
+    deleteAllEmails,
+    recoverAllDeletedEmails
+  } = useAuth();
   const [filter, setFilter] = useState<Filter>("All");
   const [timerLoading, setTimerLoading] = useState(true);
 
@@ -30,13 +41,16 @@ function Dashboard() {
 
   const isLoading = timerLoading || authLoading;
 
-  // Reactively calculate statistics based on user's real-time emails
-  const importantCount = emails.filter((e) => e.category === "important").length;
-  const lowPriorityCount = emails.filter((e) => e.category === "low_priority").length;
-  const deadlinesCount = emails.flatMap((e) => e.extractedDates).length;
+  // Reactively calculate statistics based on user's real-time active emails
+  const activeEmails = useMemo(() => emails.filter((e) => !e.deleted), [emails]);
+  const deletedEmails = useMemo(() => emails.filter((e) => e.deleted), [emails]);
+
+  const importantCount = activeEmails.filter((e) => e.category === "important").length;
+  const lowPriorityCount = activeEmails.filter((e) => e.category === "low_priority").length;
+  const deadlinesCount = activeEmails.flatMap((e) => e.extractedDates).length;
 
   const s = {
-    scanned: emails.length * 12 + 18, // dynamic realistic total scanned count
+    scanned: activeEmails.length * 12 + 18, // dynamic realistic total scanned count
     important: importantCount,
     lowPriority: lowPriorityCount,
     deadlines: deadlinesCount,
@@ -47,14 +61,17 @@ function Dashboard() {
   const displayName = username.charAt(0).toUpperCase() + username.slice(1);
 
   const filtered = useMemo(() => {
-    return emails.filter((e) => {
+    if (filter === "Deleted") {
+      return deletedEmails;
+    }
+    return activeEmails.filter((e) => {
       if (filter === "Important") return e.category === "important";
       if (filter === "Low priority") return e.category === "low_priority";
       if (filter === "With dates") return e.extractedDates.length > 0;
       if (filter === "Unread") return e.unread;
       return true;
     });
-  }, [emails, filter]);
+  }, [activeEmails, deletedEmails, filter]);
 
   const handleExitDemo = async () => {
     await logOut();
@@ -119,23 +136,47 @@ function Dashboard() {
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <h2 className="text-xl font-bold tracking-tight">Academic Priority Stream</h2>
-            <SyncButton syncMail={syncMail} syncStatus={syncStatus} isDemoMode={isDemoMode} />
+            <SyncButton syncMail={syncMail} syncStatus={syncStatus} isDemoMode={isDemoMode} emailsCount={emails.length} />
           </div>
-          <div className="flex gap-2 flex-wrap">
-            {FILTERS.map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors",
-                  filter === f
-                    ? "bg-academic text-white"
-                    : "bg-surface border border-border text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {f}
-              </button>
-            ))}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap">
+              {FILTERS.map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer",
+                    filter === f
+                      ? "bg-academic text-white"
+                      : "bg-surface border border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+
+            {filter === "Deleted" ? (
+              deletedEmails.length > 0 && (
+                <button
+                  onClick={recoverAllDeletedEmails}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/20 active:scale-[0.98] transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className="size-3.5" />
+                  Recover All
+                </button>
+              )
+            ) : (
+              activeEmails.length > 0 && (
+                <button
+                  onClick={deleteAllEmails}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-destructive/15 text-destructive hover:bg-destructive/20 active:scale-[0.98] transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <Archive className="size-3.5" />
+                  Delete All
+                </button>
+              )
+            )}
           </div>
 
           {isLoading ? (
@@ -183,20 +224,23 @@ function SyncButton({
   syncMail,
   syncStatus,
   isDemoMode,
+  emailsCount,
 }: {
-  syncMail: (mode?: SyncMode, count?: number) => Promise<void>;
+  syncMail: (mode?: SyncMode, count?: number, skipCount?: number) => Promise<void>;
   syncStatus: SyncStatusType;
   isDemoMode: boolean;
+  emailsCount: number;
 }) {
   const [open, setOpen] = useState(false);
   const [fetchCount, setFetchCount] = useState<number | "">(15);
+  const [olderCount, setOlderCount] = useState<number | "">(10);
   const disabled = syncStatus !== "idle";
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const handleSync = (mode: SyncMode, customCount?: number) => {
+  const handleSync = (mode: SyncMode, customCount?: number, skipCount?: number) => {
     setOpen(false);
     const finalCount = customCount !== undefined ? customCount : (typeof fetchCount === "number" ? fetchCount : 15);
-    syncMail(mode, finalCount);
+    syncMail(mode, finalCount, skipCount);
   };
 
   // Close dropdown on click outside
@@ -276,8 +320,8 @@ function SyncButton({
             </div>
           </button>
 
-          {/* Option C: Custom Fetch N */}
-          <div className="px-4 py-3 space-y-2">
+          {/* Option C: Custom Fetch N (Top) */}
+          <div className="px-4 py-3 space-y-2 border-b border-border">
             <div className="flex items-start gap-3">
               <Mail className="size-4 text-accent shrink-0 mt-0.5" />
               <div className="flex-1">
@@ -310,6 +354,47 @@ function SyncButton({
               />
               <button
                 onClick={() => handleSync("latest_count")}
+                className="bg-accent text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 active:scale-[0.97] cursor-pointer"
+              >
+                Fetch
+              </button>
+            </div>
+          </div>
+
+          {/* Option D: Fetch Older Custom Count (Bottom Offset) */}
+          <div className="px-4 py-3 space-y-2 bg-muted/20">
+            <div className="flex items-start gap-3">
+              <RefreshCw className="size-4 text-accent shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="text-xs font-bold text-foreground">Fetch Older (from Bottom)</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Loads historical emails starting *below* the oldest email already fetched</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 ml-7">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                placeholder="10"
+                value={olderCount}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "") {
+                    setOlderCount("");
+                  } else {
+                    const parsed = parseInt(val, 10);
+                    if (!isNaN(parsed)) {
+                      setOlderCount(Math.max(1, Math.min(100, parsed)));
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  if (olderCount === "") setOlderCount(10);
+                }}
+                className="w-16 bg-background border border-border rounded-lg px-2 py-1.5 text-xs font-mono text-center focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+              />
+              <button
+                onClick={() => handleSync("latest_count", typeof olderCount === "number" ? olderCount : 10, emailsCount)}
                 className="bg-accent text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 active:scale-[0.97] cursor-pointer"
               >
                 Fetch

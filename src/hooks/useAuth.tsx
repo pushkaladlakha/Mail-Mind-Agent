@@ -56,11 +56,13 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<void>;
   logOut: () => Promise<void>;
   enterDemoMode: () => Promise<void>;
-  syncMail: (mode?: SyncMode, count?: number) => Promise<void>;
+  syncMail: (mode?: SyncMode, count?: number, skipCount?: number) => Promise<void>;
   lastFetchedUid: number;
   updateEmailCategory: (emailId: string, category: EmailCategory) => Promise<void>;
   updateEmailReadStatus: (emailId: string, unread: boolean) => Promise<void>;
   deleteEmail: (emailId: string) => Promise<void>;
+  deleteAllEmails: () => Promise<void>;
+  recoverAllDeletedEmails: () => Promise<void>;
   connectGoogleCalendar: (apiKey: string, calendarId: string) => Promise<void>;
   disconnectGoogleCalendar: () => Promise<void>;
   savePreferences: (prefs: Partial<UserPreferences>) => Promise<void>;
@@ -351,7 +353,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Sync Mailbox Pipeline (incremental sync)
-  const syncMail = async (mode: SyncMode = "since_last", count: number = 15) => {
+  const syncMail = async (mode: SyncMode = "since_last", count: number = 15, skipCount: number = 0) => {
     if (!user) return;
     if (syncStatus !== "idle") return;
 
@@ -459,6 +461,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           mode,
           lastUid: currentLastUid > 0 ? currentLastUid : undefined,
           count: currentLastUid === 0 && mode === "since_last" ? 100 : count,
+          skipCount,
         }
       });
 
@@ -642,7 +645,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const deleteEmail = async (emailId: string) => {
     if (!user) return;
 
-    const updated = emails.filter((e) => e.id !== emailId);
+    const updated = emails.map((e) => e.id === emailId ? { ...e, deleted: true } : e);
     setEmails(updated);
 
     if (isDemoMode) {
@@ -657,7 +660,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!db) return;
     const emailRef = doc(db, "users", user.uid, "emails", emailId);
-    await deleteDoc(emailRef);
+    await updateDoc(emailRef, { deleted: true });
+  };
+
+  const deleteAllEmails = async () => {
+    if (!user) return;
+
+    const updated = emails.map((e) => ({ ...e, deleted: true }));
+    setEmails(updated);
+
+    if (isDemoMode) {
+      localStorage.setItem(`mm_emails_demo_user`, JSON.stringify(updated));
+      toast.success("All emails marked as deleted (Demo Mode)");
+      return;
+    }
+
+    if (!firebaseConfigured) {
+      localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(updated));
+      toast.success("All emails marked as deleted");
+      return;
+    }
+
+    if (!db) return;
+    try {
+      const batch = writeBatch(db);
+      emails.forEach((email) => {
+        if (!email.deleted) {
+          const ref = doc(db!, "users", user.uid, "emails", email.id);
+          batch.update(ref, { deleted: true });
+        }
+      });
+      await batch.commit();
+      toast.success("All emails successfully deleted");
+    } catch (error) {
+      console.error("Failed to delete all emails:", error);
+      toast.error("Failed to delete all emails");
+    }
+  };
+
+  const recoverAllDeletedEmails = async () => {
+    if (!user) return;
+
+    const updated = emails.map((e) => ({ ...e, deleted: false }));
+    setEmails(updated);
+
+    if (isDemoMode) {
+      localStorage.setItem(`mm_emails_demo_user`, JSON.stringify(updated));
+      toast.success("All deleted emails recovered (Demo Mode)");
+      return;
+    }
+
+    if (!firebaseConfigured) {
+      localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(updated));
+      toast.success("All deleted emails recovered");
+      return;
+    }
+
+    if (!db) return;
+    try {
+      const batch = writeBatch(db);
+      emails.forEach((email) => {
+        if (email.deleted) {
+          const ref = doc(db!, "users", user.uid, "emails", email.id);
+          batch.update(ref, { deleted: false });
+        }
+      });
+      await batch.commit();
+      toast.success("All deleted emails successfully recovered");
+    } catch (error) {
+      console.error("Failed to recover deleted emails:", error);
+      toast.error("Failed to recover deleted emails");
+    }
   };
 
   const connectGoogleCalendar = async (apiKey: string, calendarId: string) => {
@@ -733,6 +806,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         updateEmailCategory,
         updateEmailReadStatus,
         deleteEmail,
+        deleteAllEmails,
+        recoverAllDeletedEmails,
         connectGoogleCalendar,
         disconnectGoogleCalendar,
         savePreferences,
