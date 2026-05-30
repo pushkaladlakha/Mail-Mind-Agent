@@ -13,7 +13,16 @@ export const Route = createFileRoute("/_app/settings")({
 
 function SettingsPage() {
   const navigate = useNavigate();
-  const { preferences, savePreferences, firebaseConfigured, user, isDemoMode, logOut } = useAuth();
+  const { 
+    preferences, 
+    savePreferences, 
+    firebaseConfigured, 
+    user, 
+    isDemoMode, 
+    logOut, 
+    connectGoogleCalendar, 
+    disconnectGoogleCalendar 
+  } = useAuth();
 
   const [length, setLength] = useState([preferences.summaryLength]);
   const [notify, setNotify] = useState(preferences.notifyImportant);
@@ -120,16 +129,49 @@ function SettingsPage() {
       </section>
 
       <section className="bg-surface rounded-2xl border border-border p-6 space-y-5">
-        <h3 className="font-bold">Calendar sync</h3>
+        <h3 className="font-bold flex items-center justify-between">
+          <span>Calendar sync</span>
+          {preferences.calendarConnected && (
+            <span className="text-[10px] bg-success/10 text-success px-2 py-0.5 rounded-full font-bold border border-success/20">
+              Active Sync
+            </span>
+          )}
+        </h3>
         <Row
           title="Auto-sync extracted dates"
           desc="Push deadlines and exam dates to your institute calendar."
           checked={sync}
           onChange={setSync}
         />
-        <div className="bg-muted rounded-xl p-4 text-sm">
-          Connected as <span className="font-semibold">{displayEmail}</span>
-        </div>
+        
+        {preferences.calendarConnected ? (
+          <div className="bg-muted/50 border rounded-xl p-4 flex items-center justify-between gap-4">
+            <div className="space-y-0.5">
+              <div className="text-xs text-muted-foreground">Connected Google Account</div>
+              <div className="text-sm font-semibold text-foreground select-all">
+                {preferences.calendarEmail}
+              </div>
+            </div>
+            <button
+              onClick={disconnectGoogleCalendar}
+              className="text-xs text-destructive hover:underline font-bold"
+            >
+              Disconnect
+            </button>
+          </div>
+        ) : (
+          <div className="bg-muted/50 border border-dashed border-border rounded-xl p-4 flex flex-col items-center text-center space-y-3">
+            <p className="text-xs text-muted-foreground leading-relaxed max-w-sm">
+              Link your personal or institute Google Calendar to automatically schedule exam timetables, quiz submissions, and project deadlines directly to your agenda.
+            </p>
+            <button
+              onClick={connectGoogleCalendar}
+              className="bg-accent text-white px-4 py-2 rounded-lg text-xs font-bold hover:opacity-90 active:scale-[0.97] cursor-pointer inline-flex items-center gap-1.5 transition-all"
+            >
+              Connect Google Calendar
+            </button>
+          </div>
+        )}
       </section>
 
       {/* Firebase Configuration Info Panel */}
