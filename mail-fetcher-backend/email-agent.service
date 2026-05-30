@@ -1,0 +1,29 @@
+[Unit]
+Description=Email AI Agent — polls IMAP, analyzes with Gemini, creates Calendar events
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/mail-fetcher-backend
+
+# Load environment variables from .env file
+EnvironmentFile=/home/ubuntu/mail-fetcher-backend/.env
+
+# Use the system Python 3 (or adjust path to your venv)
+ExecStart=/usr/bin/python3 /home/ubuntu/mail-fetcher-backend/main.py
+
+# Always restart on crash, but wait 30s to avoid tight restart loops
+Restart=always
+RestartSec=30
+
+# Redirect stdout/stderr to systemd journal (view with: journalctl -u email-agent -f)
+StandardOutput=journal
+StandardError=journal
+
+# Give the process time to shut down gracefully
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
