@@ -491,8 +491,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Load lastFetchedUid from storage if not already set
+      // Reset UID tracker to 0 if the local inbox is empty to allow clean re-sync recoveries
       let currentLastUid = lastFetchedUid;
-      if (currentLastUid === 0) {
+      if (emails.length === 0) {
+        currentLastUid = 0;
+        setLastFetchedUid(0);
+        if (!firebaseConfigured || user.uid.startsWith("uid_")) {
+          localStorage.removeItem(`mm_lastuid_${user.uid}`);
+        } else if (db) {
+          setDoc(doc(db, "users", user.uid, "settings", "lastuid"), { uid: 0 }).catch(() => {});
+        }
+      } else if (currentLastUid === 0) {
         if (!firebaseConfigured || user.uid.startsWith("uid_")) {
           const storedUid = localStorage.getItem(`mm_lastuid_${user.uid}`);
           if (storedUid) currentLastUid = parseInt(storedUid, 10) || 0;
