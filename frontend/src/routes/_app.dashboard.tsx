@@ -7,7 +7,8 @@ import { CategoryBreakdown } from "@/components/CategoryBreakdown";
 import { EmailListSkeleton } from "@/components/EmailListSkeleton";
 import { useAuth, SyncMode, SyncStatusType } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { Archive, Loader2, ChevronDown, RefreshCw, Mail } from "lucide-react";
+import { Archive, Loader2, ChevronDown, RefreshCw, Mail, ArrowRight } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — Mail Mind" }] }),
@@ -29,15 +30,25 @@ function Dashboard() {
     syncProgress, 
     syncMail,
     deleteAllEmails,
-    recoverAllDeletedEmails
+    recoverAllDeletedEmails,
+    preferences,
+    savePreferences
   } = useAuth();
   const [filter, setFilter] = useState<Filter>("All");
   const [timerLoading, setTimerLoading] = useState(true);
+  const [showNamePrompt, setShowNamePrompt] = useState(false);
+  const [customName, setCustomName] = useState("");
 
   useEffect(() => {
     const t = setTimeout(() => setTimerLoading(false), 350);
     return () => clearTimeout(t);
   }, []);
+
+  useEffect(() => {
+    if (!authLoading && user && !isDemoMode && !preferences.displayName) {
+      setShowNamePrompt(true);
+    }
+  }, [user, authLoading, isDemoMode, preferences.displayName]);
 
   const isLoading = timerLoading || authLoading;
 
@@ -58,7 +69,7 @@ function Dashboard() {
   };
 
   const username = user?.email ? user.email.split("@")[0] : "Student";
-  const displayName = username.charAt(0).toUpperCase() + username.slice(1);
+  const displayName = preferences.displayName || (username.charAt(0).toUpperCase() + username.slice(1));
 
   const filtered = useMemo(() => {
     if (filter === "Deleted") {
@@ -216,6 +227,58 @@ function Dashboard() {
           </Link>
         </div>
       </div>
+
+      {/* First-Time Welcome Display Name Dialog Modal */}
+      {showNamePrompt && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="w-full max-w-md bg-surface border border-border/80 rounded-3xl shadow-[0_30px_80px_-30px_oklch(0.52_0.07_55_/_0.2)] p-8 animate-in zoom-in-95 duration-200 text-left space-y-6">
+            <div className="space-y-2">
+              <div className="size-12 bg-academic/10 text-academic rounded-2xl flex items-center justify-center font-bold shadow-md shadow-academic/5 text-lg border border-academic/15 animate-bounce">
+                🎓
+              </div>
+              <h2 className="text-xl font-extrabold text-foreground tracking-tight mt-4">Welcome to Mail Mind!</h2>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                We're excited to help triage your college inbox. To personalize your priority feeds and deadlines calendar, what should we call you?
+              </p>
+            </div>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const trimmed = customName.trim();
+              if (!trimmed) return;
+              try {
+                await savePreferences({ displayName: trimmed });
+                setShowNamePrompt(false);
+                toast.success(`Welcome, ${trimmed}!`, {
+                  description: "Your display name has been successfully set."
+                });
+              } catch (err) {
+                toast.error("Failed to save display name.");
+              }
+            }} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-extrabold uppercase tracking-wider text-muted-foreground">Your Display Name</label>
+                <input
+                  type="text"
+                  required
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="e.g. Pushkal Adlakha"
+                  className="w-full bg-background border border-border/80 rounded-xl px-4 py-3 text-sm font-semibold outline-none focus:ring-4 focus:ring-academic/10 focus:border-academic transition-all"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!customName.trim()}
+                className="w-full inline-flex items-center justify-center gap-2 bg-academic text-white h-12 rounded-xl text-xs font-extrabold shadow-lg shadow-academic/20 hover:opacity-95 transition-all active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Get Started
+                <ArrowRight className="size-4" />
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -30,6 +30,7 @@ function SettingsPage() {
   const [digest, setDigest] = useState(preferences.notifyDigest);
   const [sync, setSync] = useState(preferences.autoSyncCalendar);
   const [darkMode, setDarkMode] = useState(preferences.darkMode || false);
+  const [displayName, setDisplayName] = useState(preferences.displayName || "");
 
   // Keep state in sync with updated preferences from auth context
   useEffect(() => {
@@ -38,6 +39,7 @@ function SettingsPage() {
     setDigest(preferences.notifyDigest);
     setSync(preferences.autoSyncCalendar);
     setDarkMode(preferences.darkMode || false);
+    setDisplayName(preferences.displayName || "");
   }, [preferences]);
 
   const lengthLabel = ["Short", "Medium", "Detailed"][length[0] - 1];
@@ -50,6 +52,7 @@ function SettingsPage() {
         notifyDigest: digest,
         autoSyncCalendar: sync,
         darkMode: darkMode,
+        displayName: displayName.trim(),
       });
       toast.success("Settings saved", { description: "Your preferences are up to date in the database." });
     } catch (err) {
@@ -68,6 +71,26 @@ function SettingsPage() {
           Tune how Mail Mind summarizes, notifies, and syncs.
         </p>
       </div>
+
+      <section className="bg-surface rounded-2xl border border-border p-6 space-y-4">
+        <div>
+          <h3 className="font-bold">Personal Profile</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Configure how you are addressed throughout the workspace.
+          </p>
+        </div>
+        <div className="space-y-2 max-w-md text-left">
+          <label htmlFor="settings-display-name" className="text-xs font-semibold text-foreground">Your Display Name</label>
+          <input
+            id="settings-display-name"
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="e.g. Pushkal Adlakha"
+            className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all font-semibold"
+          />
+        </div>
+      </section>
 
       {/* Demo Mode Configuration Panel */}
       {isDemoMode && (

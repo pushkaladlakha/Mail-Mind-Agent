@@ -39,6 +39,7 @@ export interface UserPreferences {
   googleCalendarApiKey?: string;
   googleCalendarId?: string;
   darkMode?: boolean;
+  displayName?: string;
 }
 
 export type SyncStatusType = "idle" | "connecting" | "fetching" | "classifying" | "summarizing" | "complete" | "error";
@@ -81,6 +82,7 @@ const DEFAULT_PREFS: UserPreferences = {
   googleCalendarApiKey: "",
   googleCalendarId: "",
   darkMode: false,
+  displayName: "",
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

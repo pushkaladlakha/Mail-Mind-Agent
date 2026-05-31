@@ -12,7 +12,7 @@ import {
 
 export function AppTopbar() {
   const navigate = useNavigate();
-  const { user, logOut } = useAuth();
+  const { user, logOut, preferences } = useAuth();
 
   const handleLogout = async () => {
     try {
@@ -24,9 +24,15 @@ export function AppTopbar() {
   };
 
   const username = user?.email ? user.email.split("@")[0] : "Student";
-  const displayName = username.charAt(0).toUpperCase() + username.slice(1);
+  const derivedName = username.charAt(0).toUpperCase() + username.slice(1);
+  const displayName = preferences.displayName || derivedName;
   const displayEmail = user?.email || "student.24@iit.ac.in";
-  const avatarInitials = username.slice(0, 2).toUpperCase();
+
+  // Calculate high-quality avatar initials (e.g. "Pushkal Adlakha" -> "PA")
+  const nameParts = displayName.trim().split(/\s+/);
+  const avatarInitials = nameParts.length > 1 && nameParts[0][0] && nameParts[1][0]
+    ? (nameParts[0][0] + nameParts[1][0]).toUpperCase()
+    : displayName.slice(0, 2).toUpperCase();
 
   return (
     <header className="h-16 border-b border-border bg-surface/80 backdrop-blur-md px-4 md:px-8 flex items-center justify-between z-10 shrink-0">
