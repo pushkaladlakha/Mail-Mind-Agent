@@ -11,7 +11,7 @@ export const verifyWebmailCredentials = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }) => {
     const { email, password, imapHost, imapPort } = data;
-    
+
     // Extract Kerberos ID from email (e.g., abhas@cse.iitd.ac.in -> abhas)
     const username = email.split("@")[0];
 
@@ -63,7 +63,7 @@ export const verifyWebmailCredentials = createServerFn({ method: "POST" })
         socket.on("data", (chunk) => {
           if (done) return;
           buffer += chunk.toString();
-          
+
           // IMAP servers greet with * OK on connection
           if (buffer.includes("* OK") && !loginSent) {
             loginSent = true;
@@ -109,9 +109,9 @@ export const checkCalendarConnection = createServerFn({ method: "GET" })
     try {
       const fs = await import("fs");
       const path = await import("path");
-      
+
       const tokenPath = path.join(process.cwd(), "mail-fetcher-backend", "token.json");
-      
+
       if (fs.existsSync(tokenPath)) {
         const raw = fs.readFileSync(tokenPath, "utf-8");
         const data = JSON.parse(raw);
@@ -213,37 +213,37 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
       // Wrap connection in a 12-second timeout to prevent hanging on unreachable servers
       await Promise.race([
         client.connect(),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error("Connection to college webmail server timed out.")), 12000)
         )
       ]);
-      
+
       const lock = await client.getMailboxLock("INBOX");
       const emailsList: any[] = [];
       let highestUid = lastUid || 0;
-      
+
       try {
         const totalInbox = client.mailbox.exists;
-        
+
         if (totalInbox > 0) {
           if (mode === "since_last" && lastUid && lastUid > 0) {
             // MODE A: Fetch all emails with UID greater than lastUid
             const searchResults = await client.search({ uid: `${lastUid + 1}:*` });
-            
+
             if (searchResults.length > 0) {
               const messages = client.fetch(searchResults, {
                 source: true,
                 envelope: true,
                 uid: true,
               });
-              
+
               for await (const msg of messages) {
                 // Skip the lastUid itself (IMAP range is inclusive)
                 if (msg.uid <= lastUid) continue;
-                
+
                 const parsed = await simpleParser(msg.source);
                 if (msg.uid > highestUid) highestUid = msg.uid;
-                
+
                 emailsList.push({
                   id: `live-${msg.uid}`,
                   uid: msg.uid,
@@ -259,24 +259,24 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
             // MODE B: Fetch latest N emails by sequence number (optionally skipping recent ones for historical bottom-sync)
             const remainingInbox = Math.max(0, totalInbox - (skipCount || 0));
             const fetchCount = Math.min(count, remainingInbox);
-            
+
             if (fetchCount > 0) {
               const endSeq = remainingInbox;
               const startSeq = Math.max(1, remainingInbox - fetchCount + 1);
-              
+
               const messages = client.fetch(`${startSeq}:${endSeq}`, {
                 source: true,
                 envelope: true,
                 uid: true,
               });
-              
+
               for await (const msg of messages) {
                 const parsed = await simpleParser(msg.source);
                 if (msg.uid > highestUid) highestUid = msg.uid;
-                
+
                 // Collision guard: if we have a lastUid, skip emails already fetched (only relevant if not offset-fetching)
                 if (lastUid && msg.uid <= lastUid && !skipCount) continue;
-                
+
                 emailsList.push({
                   id: `live-${msg.uid}`,
                   uid: msg.uid,
@@ -293,12 +293,12 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
       } finally {
         lock.release();
       }
-      
+
       await client.logout();
-      
+
       // Sort descending (latest first)
       emailsList.sort((a: any, b: any) => b.uid - a.uid);
-      
+
       return {
         success: true,
         emails: emailsList,
@@ -320,18 +320,57 @@ export const classifyAndSummarizeEmailFn = createServerFn({ method: "POST" })
     studentEntryNo: z.string().optional(),
   }))
   .handler(async ({ data }) => {
+    // 1. If BACKEND_API_URL is configured, use the remote FastAPI server
+    const backendUrl = process.env.BACKEND_API_URL;
+    if (backendUrl) {
+      try {
+        const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/classify` : `${backendUrl}/api/classify`;
+        const payload = {
+          emails: [{
+            id: "single-1",
+            subject: data.subject,
+            sender: data.sender,
+            body: data.body,
+            studentName: data.studentName || "",
+            studentEntryNo: data.studentEntryNo || "",
+          }],
+          geminiApiKey: process.env.GEMINI_API_KEY || "",
+        };
+
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const resData = (await response.json()) as any;
+        if (resData && resData.success && resData.results && resData.results.length > 0) {
+          return { success: true, ...resData.results[0] };
+        }
+        throw new Error("Invalid response format from remote API");
+      } catch (err: any) {
+        console.error("Failed to run remote API call for single email:", err);
+        return { success: false, error: err.message };
+      }
+    }
+
+    // 2. Otherwise fall back to local subprocess (local dev)
     try {
       const { execFileSync } = await import("child_process");
       const path = await import("path");
-      
+
       let workspaceRoot = process.cwd();
       if (workspaceRoot.endsWith("frontend") || workspaceRoot.endsWith("frontend/")) {
         workspaceRoot = path.dirname(workspaceRoot);
       }
-      
+
       const backendDir = path.join(workspaceRoot, "backend");
       const { existsSync } = await import("fs");
-      
+
       let pythonPath = path.join(workspaceRoot, ".venv", "bin", "python");
       if (!existsSync(pythonPath)) {
         // Try Windows virtual env path structure
@@ -343,9 +382,9 @@ export const classifyAndSummarizeEmailFn = createServerFn({ method: "POST" })
           pythonPath = process.env.PYTHON_PATH || "python3";
         }
       }
-      
+
       const scriptPath = path.join(backendDir, "classify_and_summarize.py");
-      
+
       const inputStr = JSON.stringify({
         subject: data.subject,
         sender: data.sender,
@@ -381,18 +420,54 @@ export const classifyAndSummarizeEmailsBatchFn = createServerFn({ method: "POST"
     geminiApiKey: z.string().optional(),
   }))
   .handler(async ({ data }) => {
+    // 1. If BACKEND_API_URL is configured, use the remote FastAPI server
+    const backendUrl = process.env.BACKEND_API_URL;
+    if (backendUrl) {
+      try {
+        const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/classify` : `${backendUrl}/api/classify`;
+        const payload = {
+          emails: data.emails.map(e => ({
+            id: e.id,
+            subject: e.subject,
+            sender: e.sender,
+            body: e.body,
+            studentName: e.studentName || "",
+            studentEntryNo: e.studentEntryNo || "",
+          })),
+          geminiApiKey: data.geminiApiKey || process.env.GEMINI_API_KEY || "",
+        };
+
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const resData = (await response.json()) as any;
+        return resData;
+      } catch (err: any) {
+        console.error("Failed to run remote API call for batch emails:", err);
+        return { success: false, error: err.message };
+      }
+    }
+
+    // 2. Otherwise fall back to local subprocess (local dev)
     try {
       const { execFileSync } = await import("child_process");
       const path = await import("path");
-      
+
       let workspaceRoot = process.cwd();
       if (workspaceRoot.endsWith("frontend") || workspaceRoot.endsWith("frontend/")) {
         workspaceRoot = path.dirname(workspaceRoot);
       }
-      
+
       const backendDir = path.join(workspaceRoot, "backend");
       const { existsSync } = await import("fs");
-      
+
       let pythonPath = path.join(workspaceRoot, ".venv", "bin", "python");
       if (!existsSync(pythonPath)) {
         // Try Windows virtual env path structure
@@ -404,9 +479,9 @@ export const classifyAndSummarizeEmailsBatchFn = createServerFn({ method: "POST"
           pythonPath = process.env.PYTHON_PATH || "python3";
         }
       }
-      
+
       const scriptPath = path.join(backendDir, "classify_and_summarize.py");
-      
+
       const inputStr = JSON.stringify({
         emails: data.emails.map(e => ({
           id: e.id,
