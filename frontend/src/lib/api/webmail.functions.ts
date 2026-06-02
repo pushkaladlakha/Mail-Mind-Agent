@@ -12,6 +12,29 @@ export const verifyWebmailCredentials = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { email, password, imapHost, imapPort } = data;
 
+    // If BACKEND_API_URL is configured (e.g. on Vercel), proxy the IMAP login check through Render
+    const backendUrl = process.env.BACKEND_API_URL;
+    if (backendUrl) {
+      try {
+        const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/imap/login` : `${backendUrl}/api/imap/login`;
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, imapHost, imapPort }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const resData = (await response.json()) as any;
+        return { success: !!resData?.success, error: resData?.error };
+      } catch (err: any) {
+        console.error("Failed to verify credentials via backend proxy:", err);
+        return { success: false, error: err.message || "Failed to connect to backend proxy." };
+      }
+    }
+
     // Extract Kerberos ID from email (e.g., abhas@cse.iitd.ac.in -> abhas)
     const username = email.split("@")[0];
 
@@ -139,6 +162,29 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }) => {
     const { email, password, imapHost, imapPort, mode, lastUid, count, skipCount } = data;
+
+    // If BACKEND_API_URL is configured (e.g. on Vercel), proxy the IMAP email fetching through Render
+    const backendUrl = process.env.BACKEND_API_URL;
+    if (backendUrl) {
+      try {
+        const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/imap/fetch` : `${backendUrl}/api/imap/fetch`;
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, imapHost, imapPort, mode, lastUid, count, skipCount }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const resData = (await response.json()) as any;
+        return resData;
+      } catch (err: any) {
+        console.error("Failed to fetch emails via backend proxy:", err);
+        return { success: false, error: err.message || "Failed to fetch emails via backend proxy." };
+      }
+    }
     const username = email.split("@")[0];
 
     // Mock bypasses for error simulation accounts
