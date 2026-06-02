@@ -450,5 +450,48 @@ def imap_fetch_endpoint(request: IMAPFetchRequest):
         logger.error("IMAP email fetch failed for user %s: %s", username, e, exc_info=True)
         return {"success": False, "error": str(e)}
 
+import socket
+import ssl
+
+@app.get("/api/imap/diagnostic")
+def imap_diagnostic():
+    results = {}
+    host = "mailstore.iitd.ac.in"
+    port = 993
+    
+    # 1. DNS Resolution
+    try:
+        ips = socket.gethostbyname_ex(host)
+        results["dns"] = {"success": True, "ips": ips[2]}
+    except Exception as e:
+        results["dns"] = {"success": False, "error": str(e)}
+        return results
+        
+    # 2. TCP socket connection
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5.0)
+        sock.connect((host, port))
+        results["tcp"] = {"success": True}
+        sock.close()
+    except Exception as e:
+        results["tcp"] = {"success": False, "error": str(e)}
+        return results
+        
+    # 3. SSL/TLS Handshake
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5.0)
+        context = ssl._create_unverified_context()
+        ssl_sock = context.wrap_socket(sock, server_hostname=host)
+        ssl_sock.connect((host, port))
+        cert = ssl_sock.getpeercert(binary_form=True)
+        results["ssl"] = {"success": True, "cert_length": len(cert) if cert else 0}
+        ssl_sock.close()
+    except Exception as e:
+        results["ssl"] = {"success": False, "error": str(e)}
+        
+    return results
+
 # Make concurrent.futures available in module namespace
 import concurrent.futures
