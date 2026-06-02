@@ -232,3 +232,11 @@
 .animate-blob-3 {
   animation: float-blob-3 18s infinite ease-in-out 3s;
 }
+
+@keyframes spin-slow {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.animate-spin-slow:hover {
+  animation: spin-slow 4s linear infinite;
+}

@@ -21,6 +21,9 @@ export interface Email {
   tags: string[];
   unread: boolean;
   priorityScore: number; // 0–100
+  mlPrediction?: string;
+  mlConfidence?: number;
+  mlModelLoaded?: boolean;
 }
 
 const now = new Date();

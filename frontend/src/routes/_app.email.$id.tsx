@@ -16,7 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
-import { ArrowLeft, Calendar, CheckCircle2, Star, StickyNote, Trash2 } from "lucide-react";
+import { ArrowLeft, Calendar, CheckCircle2, Star, StickyNote, Trash2, Cpu, Flame } from "lucide-react";
 
 export const Route = createFileRoute("/_app/email/$id")({
   head: () => ({ meta: [{ title: "Email — Mail Mind" }] }),
@@ -51,6 +51,10 @@ function EmailDetail() {
   }
 
   const isLow = email.category === "low_priority";
+
+  // ML stats calculations
+  const confidence = email.mlConfidence !== undefined ? email.mlConfidence : 0;
+  const confidenceColor = confidence >= 85 ? "bg-success" : (confidence >= 65 ? "bg-warning" : "bg-muted-foreground");
 
   return (
     <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-6">
@@ -97,6 +101,54 @@ function EmailDetail() {
           >
             {email.summary}
           </p>
+        </div>
+
+        {/* Local ML Classifier Engine Panel */}
+        <div className="bg-surface border border-border rounded-xl p-4 space-y-3 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
+              <Cpu className="size-3.5 text-accent" />
+              Local ML Classifier Verdict
+            </div>
+            {email.mlModelLoaded ? (
+              <span className="text-[9px] bg-success/15 text-success border border-success/30 px-2 py-0.5 rounded-full font-bold">
+                RandomForest Pipeline Active
+              </span>
+            ) : (
+              <span className="text-[9px] bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full font-bold">
+                Keyword Fallback Mode
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <span className="text-xs text-muted-foreground">Teammate Model Classification</span>
+              <div className="flex items-center gap-2">
+                <span className={`text-base font-bold ${email.category === "important" ? "text-success" : "text-low"}`}>
+                  {email.mlPrediction || (email.category === "important" ? "Not Spam" : "Spam")}
+                </span>
+                <span className="text-[10px] text-muted-foreground uppercase font-semibold">
+                  (Maps to: {email.category === "important" ? "Important" : "Low Priority"})
+                </span>
+              </div>
+            </div>
+
+            {email.mlConfidence !== undefined && (
+              <div className="space-y-1">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-xs text-muted-foreground font-semibold">Prediction Confidence</span>
+                  <span className="text-xs font-mono font-bold text-foreground">{confidence}%</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2 overflow-hidden border border-border">
+                  <div 
+                    className={`h-full ${confidenceColor} transition-all duration-500`}
+                    style={{ width: `${confidence}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {!isLow && email.extractedDates.length > 0 && (

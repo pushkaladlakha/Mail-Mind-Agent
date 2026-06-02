@@ -12,7 +12,20 @@ It attempts to load your teammate's trained ML model file (model.joblib or model
 import logging
 import os
 import re
+import sys
 from typing import Optional, Any
+
+# Ensure the backend directory is in sys.path so unpickling the custom class EmailPreprocessor succeeds
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.append(_CURRENT_DIR)
+
+try:
+    import preprocessing
+except ImportError:
+    pass
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -36,28 +49,31 @@ def load_custom_model() -> Optional[Any]:
     if _loaded_model is not None:
         return _loaded_model
 
-    # 1. Try loading model.joblib
-    if os.path.exists(_JOBLIB_PATH):
-        try:
-            import joblib
-            _loaded_model = joblib.load(_JOBLIB_PATH)
-            _model_format = "joblib"
-            logger.info("Successfully loaded custom ML model from model.joblib!")
-            return _loaded_model
-        except Exception as e:
-            logger.error("Failed to load model.joblib: %s", e)
+    # Check candidate paths:
+    # 1. backend/models/random_forest_tfidf.joblib (trained model location)
+    # 2. backend/model.joblib
+    # 3. backend/model.pkl
+    candidates = [
+        (os.path.join(_MODEL_DIR, "models", "random_forest_tfidf.joblib"), "joblib"),
+        (os.path.join(_MODEL_DIR, "model.joblib"), "joblib"),
+        (os.path.join(_MODEL_DIR, "model.pkl"), "pickle"),
+    ]
 
-    # 2. Try loading model.pkl
-    if os.path.exists(_PICKLE_PATH):
-        try:
-            import pickle
-            with open(_PICKLE_PATH, "rb") as f:
-                _loaded_model = pickle.load(f)
-            _model_format = "pickle"
-            logger.info("Successfully loaded custom ML model from model.pkl!")
-            return _loaded_model
-        except Exception as e:
-            logger.error("Failed to load model.pkl: %s", e)
+    for path, fmt in candidates:
+        if os.path.exists(path):
+            try:
+                if fmt == "joblib":
+                    import joblib
+                    _loaded_model = joblib.load(path)
+                else:
+                    import pickle
+                    with open(path, "rb") as f:
+                        _loaded_model = pickle.load(f)
+                _model_format = fmt
+                logger.info("Successfully loaded custom ML model from %s!", path)
+                return _loaded_model
+            except Exception as e:
+                logger.error("Failed to load model from %s: %s", path, e)
 
     # 3. No model file found. Log drop-in instructions for the teammate.
     logger.warning(
@@ -140,37 +156,61 @@ def _fallback_keyword_predict(subject: str, sender: str, body: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _infer_urgency(subject: str, body: str) -> str:
+    """
+    Infers whether an email is urgent based on keyword presence.
+    Matches the training preprocessing schema.
+    """
+    text = f"{subject} {body}".lower()
+    urgent_words = [
+        "urgent",
+        "asap",
+        "immediately",
+        "important",
+        "deadline",
+        "last date",
+        "action required",
+        "mandatory"
+    ]
+    for word in urgent_words:
+        if word in text:
+            return "urgent"
+    return "normal"
+
+
 def predict_email_category(subject: str, sender: str, body: str) -> str:
     """
-    Predicts the classification category of an incoming email.
-    Uses the loaded ML model if present; falls back to the keyword rules otherwise.
-
-    Returns:
-        "important" (non-spam / priority) or "low_priority" (spam / noise)
+    Predicts the classification category of an incoming email using the trained ML model.
+    Keyword fallback classification is fully disabled.
     """
     model = load_custom_model()
     
-    if model is not None:
-        try:
-            # Prepare the input text by joining subject and body
-            email_text = f"{subject} {body}"
+    if model is None:
+        raise RuntimeError("ML Classifier Error: Custom ML model (random_forest_tfidf.joblib) could not be loaded!")
+        
+    try:
+        # Construct the single-row Pandas DataFrame matching custom preprocessor schema
+        email_df = pd.DataFrame([{
+            "Subject": subject,
+            "From": sender,
+            "Body": body,
+            "Urgency": _infer_urgency(subject, body),
+            "Date": ""
+        }])
+        
+        # Predict using teammate's pipeline (expects DataFrame input)
+        prediction = model.predict(email_df)[0]
+        
+        # Map predictions dynamically to our two UI streams.
+        # Handles teammate's string labels ("Spam", "Not Spam") as well as fallback strings/numbers.
+        pred_str = str(prediction).lower().strip()
+        
+        # "not spam", "not_spam", "ham", "important", "priority" are all mapped to "important"
+        if pred_str in ("important", "1", "non-spam", "priority", "academic", "true", "yes", "not spam", "not_spam", "ham"):
+            return "important"
+        else:
+            return "low_priority"
             
-            # Predict using teammate's pipeline.
-            # Handles Scikit-Learn single predictions: expects a list/array of texts
-            prediction = model.predict([email_text])[0]
-            
-            # Map predictions dynamically to our two UI streams.
-            # Handles string predictions (e.g. "important", "spam", "non-spam", "priority")
-            # and numeric predictions (e.g. 1 for important/non-spam, 0 for spam/noise)
-            pred_str = str(prediction).lower().strip()
-            
-            if pred_str in ("important", "1", "non-spam", "priority", "academic", "true", "yes"):
-                return "important"
-            else:
-                return "low_priority"
-                
-        except Exception as e:
-            logger.error("Custom ML model prediction failed (falling back): %s", e)
-
-    # Fallback keyword rules
-    return _fallback_keyword_predict(subject, sender, body)
+    except Exception as e:
+        logger.error("Custom ML model prediction failed: %s", e)
+        raise RuntimeError(f"ML Classifier Error: Prediction failed on loaded model: {e}")

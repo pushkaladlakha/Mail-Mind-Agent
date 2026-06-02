@@ -310,3 +310,127 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
       return { success: false, error: err.message || "Failed to fetch emails from webmail server." };
     }
   });
+
+export const classifyAndSummarizeEmailFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({
+    subject: z.string(),
+    sender: z.string(),
+    body: z.string(),
+    studentName: z.string().optional(),
+    studentEntryNo: z.string().optional(),
+  }))
+  .handler(async ({ data }) => {
+    try {
+      const { execFileSync } = await import("child_process");
+      const path = await import("path");
+      
+      let workspaceRoot = process.cwd();
+      if (workspaceRoot.endsWith("frontend") || workspaceRoot.endsWith("frontend/")) {
+        workspaceRoot = path.dirname(workspaceRoot);
+      }
+      
+      const backendDir = path.join(workspaceRoot, "backend");
+      const { existsSync } = await import("fs");
+      
+      let pythonPath = path.join(workspaceRoot, ".venv", "bin", "python");
+      if (!existsSync(pythonPath)) {
+        // Try Windows virtual env path structure
+        const winPython = path.join(workspaceRoot, ".venv", "Scripts", "python.exe");
+        if (existsSync(winPython)) {
+          pythonPath = winPython;
+        } else {
+          // Fall back to system python3 command or custom path variable
+          pythonPath = process.env.PYTHON_PATH || "python3";
+        }
+      }
+      
+      const scriptPath = path.join(backendDir, "classify_and_summarize.py");
+      
+      const inputStr = JSON.stringify({
+        subject: data.subject,
+        sender: data.sender,
+        body: data.body,
+        student_name: data.studentName || "",
+        student_entry_no: data.studentEntryNo || "",
+      });
+
+      const output = execFileSync(pythonPath, [scriptPath], {
+        input: inputStr,
+        encoding: "utf-8",
+        cwd: backendDir,
+      });
+
+      const result = JSON.parse(output);
+      return { success: true, ...result };
+    } catch (err: any) {
+      console.error("Failed to run classify_and_summarize.py subprocess:", err);
+      return { success: false, error: err.message };
+    }
+  });
+
+export const classifyAndSummarizeEmailsBatchFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({
+    emails: z.array(z.object({
+      id: z.string(),
+      subject: z.string(),
+      sender: z.string(),
+      body: z.string(),
+      studentName: z.string().optional(),
+      studentEntryNo: z.string().optional(),
+    })),
+    geminiApiKey: z.string().optional(),
+  }))
+  .handler(async ({ data }) => {
+    try {
+      const { execFileSync } = await import("child_process");
+      const path = await import("path");
+      
+      let workspaceRoot = process.cwd();
+      if (workspaceRoot.endsWith("frontend") || workspaceRoot.endsWith("frontend/")) {
+        workspaceRoot = path.dirname(workspaceRoot);
+      }
+      
+      const backendDir = path.join(workspaceRoot, "backend");
+      const { existsSync } = await import("fs");
+      
+      let pythonPath = path.join(workspaceRoot, ".venv", "bin", "python");
+      if (!existsSync(pythonPath)) {
+        // Try Windows virtual env path structure
+        const winPython = path.join(workspaceRoot, ".venv", "Scripts", "python.exe");
+        if (existsSync(winPython)) {
+          pythonPath = winPython;
+        } else {
+          // Fall back to system python3 command or custom path variable
+          pythonPath = process.env.PYTHON_PATH || "python3";
+        }
+      }
+      
+      const scriptPath = path.join(backendDir, "classify_and_summarize.py");
+      
+      const inputStr = JSON.stringify({
+        emails: data.emails.map(e => ({
+          id: e.id,
+          subject: e.subject,
+          sender: e.sender,
+          body: e.body,
+          student_name: e.studentName || "",
+          student_entry_no: e.studentEntryNo || "",
+        })),
+        gemini_api_key: data.geminiApiKey || "",
+      });
+
+      const output = execFileSync(pythonPath, [scriptPath], {
+        input: inputStr,
+        encoding: "utf-8",
+        cwd: backendDir,
+        maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large batches
+      });
+
+      const result = JSON.parse(output);
+      return result;
+    } catch (err: any) {
+      console.error("Failed to run batch classify_and_summarize.py subprocess:", err);
+      return { success: false, error: err.message };
+    }
+  });
+

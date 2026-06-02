@@ -24,7 +24,7 @@ import {
   fetchMailbox,
 } from "@/lib/email-service";
 import { toast } from "sonner";
-import { fetchRealEmails } from "@/lib/api/webmail.functions";
+import { fetchRealEmails, classifyAndSummarizeEmailFn, classifyAndSummarizeEmailsBatchFn } from "@/lib/api/webmail.functions";
 
 // Mock email ID patterns that should be auto-cleaned from real user databases
 const MOCK_EMAIL_ID_PATTERN = /^(e\d+|incoming-\d+)$/;
@@ -40,6 +40,7 @@ export interface UserPreferences {
   googleCalendarId?: string;
   darkMode?: boolean;
   displayName?: string;
+  geminiApiKey?: string;
 }
 
 export type SyncStatusType = "idle" | "connecting" | "fetching" | "classifying" | "summarizing" | "complete" | "error";
@@ -68,6 +69,7 @@ interface AuthContextType {
   connectGoogleCalendar: (apiKey: string, calendarId: string) => Promise<void>;
   disconnectGoogleCalendar: () => Promise<void>;
   savePreferences: (prefs: Partial<UserPreferences>) => Promise<void>;
+  resetEmailSync: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -556,53 +558,182 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      setSyncProgress({ total: liveEmails.length, processed: 0 });
-
-      // Build Email objects — BYPASS ML model and Gemini, use local keyword classifier only
       const existingIds = new Set(emails.map((e) => e.id));
-      const processedEmails: Email[] = [];
+      const newLiveEmails = liveEmails.filter((item) => !existingIds.has(item.id));
       let importantCount = 0;
       let lowPriorityCount = 0;
+      let totalProcessed = 0;
 
-      for (let i = 0; i < liveEmails.length; i++) {
-        const item = liveEmails[i];
+      if (newLiveEmails.length > 0) {
+        setSyncStatus("classifying");
+        setSyncProgress({ total: newLiveEmails.length, processed: 0 });
 
-        // Skip duplicates
-        if (existingIds.has(item.id)) {
-          setSyncProgress((prev) => ({ ...prev, processed: i + 1 }));
-          continue;
+        // Process in chunks of 5 to show real-time dashboard updates without bottlenecking
+        const chunkSize = 5;
+        
+        for (let offset = 0; offset < newLiveEmails.length; offset += chunkSize) {
+          const chunk = newLiveEmails.slice(offset, offset + chunkSize);
+          const chunkProcessedEmails: Email[] = [];
+
+          try {
+            const batchInput = chunk.map((item) => ({
+              id: item.id,
+              subject: item.subject,
+              sender: item.sender,
+              body: item.body,
+              studentName: preferences.displayName || "",
+              studentEntryNo: preferences.googleCalendarId || "",
+            }));
+
+            const batchResult = await classifyAndSummarizeEmailsBatchFn({
+              data: { 
+                emails: batchInput,
+                geminiApiKey: preferences.geminiApiKey || ""
+              }
+            });
+
+            if (batchResult.success && batchResult.results) {
+              const resultsMap = new Map<string, any>();
+              batchResult.results.forEach((res: any) => {
+                if (res && res.id) {
+                  resultsMap.set(res.id, res);
+                }
+              });
+
+              for (let i = 0; i < chunk.length; i++) {
+                const item = chunk[i];
+                const aiResult = resultsMap.get(item.id);
+
+                let category: EmailCategory = "low_priority";
+                let summary = "";
+                let kind: EmailKind = "academic";
+                let priorityScore = 25;
+                let extractedDates: any[] = [];
+                let tags: string[] = ["Live Inbox"];
+                let mlPrediction = "Unknown";
+                let mlConfidence = undefined;
+                let mlModelLoaded = false;
+
+                if (aiResult) {
+                  category = aiResult.category as EmailCategory;
+                  summary = aiResult.summary || "";
+                  kind = aiResult.kind as EmailKind;
+                  priorityScore = aiResult.priorityScore || 25;
+                  extractedDates = aiResult.extracted_dates || [];
+                  tags = aiResult.tags || ["Live Inbox"];
+                  mlPrediction = aiResult.ml_prediction || "Unknown";
+                  mlConfidence = aiResult.ml_confidence !== undefined ? aiResult.ml_confidence : undefined;
+                  mlModelLoaded = !!aiResult.ml_model_loaded;
+                } else {
+                  category = classifyEmail(item.subject, item.body);
+                  const bodyText = (item.body || "").replace(/<[^>]*>/g, "").trim();
+                  summary = bodyText.length > 180
+                    ? bodyText.substring(0, 180) + "..."
+                    : bodyText || "(No content preview)";
+                  kind = "academic";
+                  priorityScore = category === "important" ? 75 : 25;
+                  extractedDates = [];
+                  tags = ["Fallback Keyword"];
+                }
+
+                if (category === "important") importantCount++;
+                else lowPriorityCount++;
+
+                const completeEmail: Email = {
+                  id: item.id,
+                  sender: item.sender,
+                  senderEmail: item.senderEmail,
+                  subject: item.subject,
+                  bodySnippet: item.body,
+                  receivedAt: item.receivedAt,
+                  category,
+                  kind,
+                  summary,
+                  extractedDates,
+                  tags,
+                  unread: true,
+                  priorityScore,
+                  mlPrediction,
+                  mlConfidence,
+                  mlModelLoaded,
+                };
+
+                chunkProcessedEmails.push(completeEmail);
+              }
+            } else {
+              throw new Error(batchResult.error || "Batch subprocess returned failure status");
+            }
+          } catch (err) {
+            console.warn("Chunk processing failed, using keyword fallbacks:", err);
+            for (let i = 0; i < chunk.length; i++) {
+              const item = chunk[i];
+              const category = classifyEmail(item.subject, item.body);
+              const bodyText = (item.body || "").replace(/<[^>]*>/g, "").trim();
+              const summary = bodyText.length > 180
+                ? bodyText.substring(0, 180) + "..."
+                : bodyText || "(No content preview)";
+
+              if (category === "important") importantCount++;
+              else lowPriorityCount++;
+
+              const completeEmail: Email = {
+                id: item.id,
+                sender: item.sender,
+                senderEmail: item.senderEmail,
+                subject: item.subject,
+                bodySnippet: item.body,
+                receivedAt: item.receivedAt,
+                category,
+                kind: "academic",
+                summary,
+                extractedDates: [],
+                tags: ["Fallback Keyword"],
+                unread: true,
+                priorityScore: category === "important" ? 75 : 25,
+              };
+
+              chunkProcessedEmails.push(completeEmail);
+            }
+          }
+
+          // Merge chunk results into the active state immediately so they display live!
+          setEmails((prevEmails) => {
+            const merged = [...chunkProcessedEmails, ...prevEmails];
+            merged.sort((a, b) => +new Date(b.receivedAt) - +new Date(a.receivedAt));
+            
+            // Persist locally for immediate safety
+            if (!firebaseConfigured || user.uid.startsWith("uid_")) {
+              localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(merged));
+            }
+            return merged;
+          });
+
+          // Also save this chunk directly to cloud Firestore if enabled!
+          if (firebaseConfigured && !user.uid.startsWith("uid_") && db) {
+            try {
+              const batch = writeBatch(db);
+              chunkProcessedEmails.forEach((email) => {
+                const emailDoc = doc(db!, "users", user.uid, "emails", email.id);
+                batch.set(emailDoc, email);
+              });
+              await batch.commit();
+            } catch (fsErr) {
+              console.error("Failed to commit chunk to Firestore:", fsErr);
+            }
+          }
+
+          totalProcessed += chunk.length;
+          setSyncProgress((prev) => ({ ...prev, processed: totalProcessed }));
         }
 
-        setSyncStatus("classifying");
-        // Local keyword-based classification (bypass ML model)
-        const category = classifyEmail(item.subject, item.body);
-        if (category === "important") importantCount++;
-        else lowPriorityCount++;
-
-        // Truncate body for summary (bypass Gemini)
-        const bodyText = (item.body || "").replace(/<[^>]*>/g, "").trim();
-        const summary = bodyText.length > 180
-          ? bodyText.substring(0, 180) + "..."
-          : bodyText || "(No content preview)";
-
-        const completeEmail: Email = {
-          id: item.id,
-          sender: item.sender,
-          senderEmail: item.senderEmail,
-          subject: item.subject,
-          bodySnippet: item.body,
-          receivedAt: item.receivedAt,
-          category,
-          kind: "academic",
-          summary,
-          extractedDates: [],
-          tags: ["Live Inbox"],
-          unread: true,
-          priorityScore: category === "important" ? 75 : 25,
-        };
-
-        processedEmails.push(completeEmail);
-        setSyncProgress((prev) => ({ ...prev, processed: i + 1 }));
+        // Save last fetched checkpoints
+        const newCheckpointTime = +new Date();
+        if (!firebaseConfigured || user.uid.startsWith("uid_")) {
+          localStorage.setItem(`mm_checkpoint_${user.uid}`, String(newCheckpointTime));
+        } else if (db) {
+          const checkpointDoc = doc(db!, "users", user.uid, "settings", "checkpoint");
+          setDoc(checkpointDoc, { timestamp: newCheckpointTime }).catch(() => {});
+        }
       }
 
       // Save the highest UID for next sync
@@ -615,39 +746,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (processedEmails.length === 0) {
+      if (totalProcessed === 0) {
         setSyncStatus("complete");
         toast.info("Sync complete. No new emails found.");
         setTimeout(() => setSyncStatus("idle"), 2000);
         return;
       }
 
-      // Merge and sort
-      const mergedList = [...processedEmails, ...emails];
-      mergedList.sort((a, b) => +new Date(b.receivedAt) - +new Date(a.receivedAt));
-      setEmails(mergedList);
-
-      const newCheckpointTime = +new Date();
-
-      if (!firebaseConfigured || user.uid.startsWith("uid_")) {
-        localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify(mergedList));
-        localStorage.setItem(`mm_checkpoint_${user.uid}`, String(newCheckpointTime));
-      } else {
-        if (db) {
-          const batch = writeBatch(db);
-          processedEmails.forEach((email) => {
-            const emailDoc = doc(db!, "users", user.uid, "emails", email.id);
-            batch.set(emailDoc, email);
-          });
-          const checkpointDoc = doc(db!, "users", user.uid, "settings", "checkpoint");
-          batch.set(checkpointDoc, { timestamp: newCheckpointTime });
-          await batch.commit();
-        }
-      }
-
       setSyncStatus("complete");
       toast.success("Sync complete", {
-        description: `${processedEmails.length} live email${processedEmails.length === 1 ? "" : "s"} fetched (${importantCount} important, ${lowPriorityCount} low-priority).`,
+        description: `${totalProcessed} live email${totalProcessed === 1 ? "" : "s"} fetched (${importantCount} important, ${lowPriorityCount} low-priority).`,
       });
 
       setTimeout(() => setSyncStatus("idle"), 2500);
@@ -869,6 +977,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await setDoc(settingsRef, updatedPrefs, { merge: true });
   };
 
+  const resetEmailSync = async () => {
+    if (!user) return;
+    
+    // Clear list of emails from local state
+    setEmails([]);
+    
+    // Remove last UID and cached emails from local storage
+    if (isDemoMode) {
+      localStorage.removeItem("mm_lastuid_demo_user");
+      localStorage.setItem("mm_emails_demo_user", JSON.stringify([]));
+    } else {
+      localStorage.removeItem(`mm_lastuid_${user.uid}`);
+      localStorage.setItem(`mm_emails_${user.uid}`, JSON.stringify([]));
+    }
+    
+    // Also clear from Firestore if cloud DB is active!
+    if (!isDemoMode && firebaseConfigured && !user.uid.startsWith("uid_") && db) {
+      try {
+        const { getDocs } = await import("firebase/firestore");
+        const emailsCollection = collection(db, "users", user.uid, "emails");
+        const snapshot = await getDocs(emailsCollection);
+        const batch = writeBatch(db);
+        snapshot.docs.forEach((doc) => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+      } catch (err) {
+        console.error("Failed to clear cloud emails:", err);
+      }
+    }
+    
+    toast.success("Sync database cleared! Click 'Sync Mail' on the dashboard to fetch and summarize your emails again.");
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -894,6 +1036,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         connectGoogleCalendar,
         disconnectGoogleCalendar,
         savePreferences,
+        resetEmailSync,
       }}
     >
       {children}

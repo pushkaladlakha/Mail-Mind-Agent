@@ -12,7 +12,7 @@ import time
 from typing import List, Optional, Tuple
 
 from google import genai
-from google.api_core.exceptions import NotFound, ResourceExhausted
+from google.genai.errors import APIError
 
 from attachment_analyzer import (
     AttachmentInfo,
@@ -29,8 +29,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 MODEL_CASCADE = [
-    "gemini-2.5-flash",   # standard production model
-    "gemini-2.5-flash-lite", # fallback low-cost model
+    "gemini-2.5-flash",          # latest production model
+    "gemini-2.0-flash",          # extremely stable and fast fallback
+    "gemini-2.0-flash-lite-001", # lightweight fallback
+    "gemini-2.5-pro",            # high-reasoning fallback
 ]
 
 _RATE_LIMIT_BACKOFF_SECONDS = 5
@@ -192,17 +194,20 @@ def call_gemini_with_cascade(prompt: str, api_key: str) -> Tuple[str, str]:
             else:
                 return response.text, model_name
 
-        except ResourceExhausted as exc:
-            logger.warning(
-                "Model %s rate-limited (429). Waiting %ds before next model…",
-                model_name, _RATE_LIMIT_BACKOFF_SECONDS,
-            )
-            last_exc = exc
-            time.sleep(_RATE_LIMIT_BACKOFF_SECONDS)
-
-        except NotFound as exc:
-            logger.warning("Model %s not found (404), skipping. Detail: %s", model_name, exc)
-            last_exc = exc
+        except APIError as exc:
+            if exc.code == 429:
+                logger.warning(
+                    "Model %s rate-limited (429). Waiting %ds before next model…",
+                    model_name, _RATE_LIMIT_BACKOFF_SECONDS,
+                )
+                last_exc = exc
+                time.sleep(_RATE_LIMIT_BACKOFF_SECONDS)
+            elif exc.code == 404:
+                logger.warning("Model %s not found (404), skipping. Detail: %s", model_name, exc)
+                last_exc = exc
+            else:
+                logger.error("Unexpected API error from model %s: %s", model_name, exc, exc_info=True)
+                raise
 
         except Exception as exc:
             logger.error("Unexpected error from model %s: %s", model_name, exc, exc_info=True)

@@ -4,7 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { Shield, CheckCircle, AlertTriangle, Key, CalendarRange, Eye, EyeOff } from "lucide-react";
+import { Shield, CheckCircle, AlertTriangle, Key, CalendarRange, Eye, EyeOff, RefreshCw, Trash2 } from "lucide-react";
 import { UserPreferences } from "@/hooks/useAuth";
 
 export const Route = createFileRoute("/_app/settings")({
@@ -22,7 +22,8 @@ function SettingsPage() {
     isDemoMode, 
     logOut, 
     connectGoogleCalendar, 
-    disconnectGoogleCalendar 
+    disconnectGoogleCalendar,
+    resetEmailSync,
   } = useAuth();
 
   const [length, setLength] = useState([preferences.summaryLength]);
@@ -31,6 +32,8 @@ function SettingsPage() {
   const [sync, setSync] = useState(preferences.autoSyncCalendar);
   const [darkMode, setDarkMode] = useState(preferences.darkMode || false);
   const [displayName, setDisplayName] = useState(preferences.displayName || "");
+  const [geminiApiKey, setGeminiApiKey] = useState(preferences.geminiApiKey || "");
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
 
   // Keep state in sync with updated preferences from auth context
   useEffect(() => {
@@ -40,6 +43,7 @@ function SettingsPage() {
     setSync(preferences.autoSyncCalendar);
     setDarkMode(preferences.darkMode || false);
     setDisplayName(preferences.displayName || "");
+    setGeminiApiKey(preferences.geminiApiKey || "");
   }, [preferences]);
 
   const lengthLabel = ["Short", "Medium", "Detailed"][length[0] - 1];
@@ -53,6 +57,7 @@ function SettingsPage() {
         autoSyncCalendar: sync,
         darkMode: darkMode,
         displayName: displayName.trim(),
+        geminiApiKey: geminiApiKey.trim(),
       });
       toast.success("Settings saved", { description: "Your preferences are up to date in the database." });
     } catch (err) {
@@ -89,6 +94,49 @@ function SettingsPage() {
             placeholder="e.g. Pushkal Adlakha"
             className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all font-semibold"
           />
+        </div>
+      </section>
+
+      {/* Google Gemini AI Settings */}
+      <section className="bg-surface rounded-2xl border border-border p-6 space-y-4">
+        <div>
+          <h3 className="font-bold">Google Gemini AI Engine</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Specify a custom Google Gemini API Key. By default, the app uses a shared key that has strict daily request limits. Adding your own free key unlocks 1,500 requests per day!
+          </p>
+        </div>
+        <div className="space-y-3 max-w-lg text-left">
+          <div className="flex justify-between items-center">
+            <label htmlFor="settings-gemini-key" className="text-xs font-semibold text-foreground">Your Gemini API Key</label>
+            <a 
+              href="https://aistudio.google.com/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-[11px] font-bold text-accent hover:underline"
+            >
+              🔑 Get a Free API Key from Google AI Studio →
+            </a>
+          </div>
+          <div className="relative">
+            <input
+              id="settings-gemini-key"
+              type={showGeminiKey ? "text" : "password"}
+              value={geminiApiKey}
+              onChange={(e) => setGeminiApiKey(e.target.value)}
+              placeholder="Paste your API key here (starts with AIzaSy...)"
+              className="w-full bg-background border border-border rounded-lg pl-3 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => setShowGeminiKey(!showGeminiKey)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showGeminiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
+          <p className="text-[10px] text-muted-foreground leading-relaxed">
+            Your key is saved locally in your profile and is never sent to any third-party server besides direct Google Gemini API requests.
+          </p>
         </div>
       </section>
 
@@ -172,6 +220,38 @@ function SettingsPage() {
         connectGoogleCalendar={connectGoogleCalendar}
         disconnectGoogleCalendar={disconnectGoogleCalendar}
       />
+
+      {/* Cache & Sync Management */}
+      <section className="bg-surface rounded-2xl border border-border p-6 space-y-4">
+        <div>
+          <h3 className="font-bold flex items-center gap-2">
+            <RefreshCw className="size-4 text-accent animate-spin-slow" />
+            Cache & Sync Management
+          </h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Force Mail Mind to wipe locally cached emails and pull them fresh from the IMAP mail server.
+          </p>
+        </div>
+        <div className="bg-destructive/5 border border-destructive/20 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-destructive">Wipe & Resync Database</p>
+            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+              If your summaries look incorrect or were generated using old mockup keys, clearing the sync database allows a clean, complete re-triage using the fitted ML model and real Gemini cascade.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              if (confirm("Are you sure you want to clear your email sync history? This will remove all currently fetched emails and reset the sync token. Your university webmail is entirely untouched.")) {
+                resetEmailSync();
+              }
+            }}
+            className="bg-destructive hover:bg-destructive/95 text-destructive-foreground px-4 py-2.5 rounded-lg text-xs font-bold shadow active:scale-[0.98] cursor-pointer inline-flex items-center gap-1.5 transition-all self-start sm:self-center shrink-0"
+          >
+            <Trash2 className="size-3.5" />
+            Reset Sync Database
+          </button>
+        </div>
+      </section>
 
       {/* Firebase Configuration Info Panel */}
       <section className="bg-surface rounded-2xl border border-border p-6 space-y-4">
