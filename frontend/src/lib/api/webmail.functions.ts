@@ -3,13 +3,14 @@ import { z } from "zod";
 import tls from "tls";
 
 function getBackendUrl(): string | undefined {
-  const env = typeof process !== "undefined" ? process.env : {};
-  if (env.BACKEND_API_URL) {
-    return env.BACKEND_API_URL;
-  }
-  // Default to deployed Render backend when on Vercel or production
-  if (env.VERCEL === "1" || env.VERCEL === "true" || env.NODE_ENV === "production") {
-    return "https://mail-mind-agent.onrender.com";
+  if (typeof process !== "undefined") {
+    if (process.env.BACKEND_API_URL) {
+      return process.env.BACKEND_API_URL;
+    }
+    // Direct references to process.env are statically replaced by Vite/bundlers at build time
+    if (process.env.VERCEL === "1" || process.env.VERCEL === "true" || process.env.NODE_ENV === "production") {
+      return "https://mail-mind-agent.onrender.com";
+    }
   }
   return undefined;
 }
