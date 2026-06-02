@@ -154,8 +154,9 @@ function ConnectPage() {
       }, 1000);
 
     } catch (err: any) {
-      console.error("Backend auth returned failure.");
+      console.error("Backend auth returned failure:", err);
       setAuthStatus("invalid_credentials");
+      setErrorMessage(err.message || "An unexpected error occurred during session initialization.");
       setPassword("");
       passwordRef.current?.focus();
     }
