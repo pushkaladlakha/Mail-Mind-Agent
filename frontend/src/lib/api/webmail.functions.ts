@@ -2,6 +2,18 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import tls from "tls";
 
+function getBackendUrl(): string | undefined {
+  const env = typeof process !== "undefined" ? process.env : {};
+  if (env.BACKEND_API_URL) {
+    return env.BACKEND_API_URL;
+  }
+  // Default to deployed Render backend when on Vercel or production
+  if (env.VERCEL === "1" || env.VERCEL === "true" || env.NODE_ENV === "production") {
+    return "https://mail-mind-agent.onrender.com";
+  }
+  return undefined;
+}
+
 export const verifyWebmailCredentials = createServerFn({ method: "POST" })
   .inputValidator(z.object({
     email: z.string().email(),
@@ -12,11 +24,12 @@ export const verifyWebmailCredentials = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { email, password, imapHost, imapPort } = data;
 
-    // If BACKEND_API_URL is configured (e.g. on Vercel), proxy the IMAP login check through Render
-    const backendUrl = process.env.BACKEND_API_URL;
+    const backendUrl = getBackendUrl();
+    console.log(`[verifyWebmailCredentials] Resolved backendUrl: ${backendUrl}`);
     if (backendUrl) {
+      const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/imap/login` : `${backendUrl}/api/imap/login`;
+      console.log(`[verifyWebmailCredentials] Proxying login request to: ${apiUrl}`);
       try {
-        const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/imap/login` : `${backendUrl}/api/imap/login`;
         const response = await fetch(apiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -24,16 +37,20 @@ export const verifyWebmailCredentials = createServerFn({ method: "POST" })
         });
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errText = await response.text().catch(() => "");
+          console.error(`[verifyWebmailCredentials] Proxy responded with status ${response.status}:`, errText);
+          throw new Error(`Proxy error! Status ${response.status}: ${errText || "No response details"}`);
         }
 
         const resData = (await response.json()) as any;
+        console.log(`[verifyWebmailCredentials] Proxy returned success:`, !!resData?.success);
         return { success: !!resData?.success, error: resData?.error };
       } catch (err: any) {
-        console.error("Failed to verify credentials via backend proxy:", err);
+        console.error("[verifyWebmailCredentials] Failed to verify credentials via backend proxy:", err);
         return { success: false, error: err.message || "Failed to connect to backend proxy." };
       }
     }
+
 
     // Extract Kerberos ID from email (e.g., abhas@cse.iitd.ac.in -> abhas)
     const username = email.split("@")[0];
@@ -163,11 +180,12 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { email, password, imapHost, imapPort, mode, lastUid, count, skipCount } = data;
 
-    // If BACKEND_API_URL is configured (e.g. on Vercel), proxy the IMAP email fetching through Render
-    const backendUrl = process.env.BACKEND_API_URL;
+    const backendUrl = getBackendUrl();
+    console.log(`[fetchRealEmails] Resolved backendUrl: ${backendUrl}`);
     if (backendUrl) {
+      const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/imap/fetch` : `${backendUrl}/api/imap/fetch`;
+      console.log(`[fetchRealEmails] Proxying fetch request to: ${apiUrl}`);
       try {
-        const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/imap/fetch` : `${backendUrl}/api/imap/fetch`;
         const response = await fetch(apiUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -175,13 +193,16 @@ export const fetchRealEmails = createServerFn({ method: "POST" })
         });
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errText = await response.text().catch(() => "");
+          console.error(`[fetchRealEmails] Proxy responded with status ${response.status}:`, errText);
+          throw new Error(`Proxy error! Status ${response.status}: ${errText || "No response details"}`);
         }
 
         const resData = (await response.json()) as any;
+        console.log(`[fetchRealEmails] Proxy returned success: ${!!resData?.success}, count: ${resData?.emails?.length || 0}`);
         return resData;
       } catch (err: any) {
-        console.error("Failed to fetch emails via backend proxy:", err);
+        console.error("[fetchRealEmails] Failed to fetch emails via backend proxy:", err);
         return { success: false, error: err.message || "Failed to fetch emails via backend proxy." };
       }
     }
@@ -366,11 +387,12 @@ export const classifyAndSummarizeEmailFn = createServerFn({ method: "POST" })
     studentEntryNo: z.string().optional(),
   }))
   .handler(async ({ data }) => {
-    // 1. If BACKEND_API_URL is configured, use the remote FastAPI server
-    const backendUrl = process.env.BACKEND_API_URL;
+    const backendUrl = getBackendUrl();
+    console.log(`[classifyAndSummarizeEmailFn] Resolved backendUrl: ${backendUrl}`);
     if (backendUrl) {
+      const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/classify` : `${backendUrl}/api/classify`;
+      console.log(`[classifyAndSummarizeEmailFn] Proxying single classify to: ${apiUrl}`);
       try {
-        const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/classify` : `${backendUrl}/api/classify`;
         const payload = {
           emails: [{
             id: "single-1",
@@ -380,7 +402,7 @@ export const classifyAndSummarizeEmailFn = createServerFn({ method: "POST" })
             studentName: data.studentName || "",
             studentEntryNo: data.studentEntryNo || "",
           }],
-          geminiApiKey: process.env.GEMINI_API_KEY || "",
+          geminiApiKey: (typeof process !== "undefined" ? process.env.GEMINI_API_KEY : "") || "",
         };
 
         const response = await fetch(apiUrl, {
@@ -390,7 +412,9 @@ export const classifyAndSummarizeEmailFn = createServerFn({ method: "POST" })
         });
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errText = await response.text().catch(() => "");
+          console.error(`[classifyAndSummarizeEmailFn] Proxy responded with status ${response.status}:`, errText);
+          throw new Error(`Proxy error! Status ${response.status}: ${errText || "No response details"}`);
         }
 
         const resData = (await response.json()) as any;
@@ -399,7 +423,7 @@ export const classifyAndSummarizeEmailFn = createServerFn({ method: "POST" })
         }
         throw new Error("Invalid response format from remote API");
       } catch (err: any) {
-        console.error("Failed to run remote API call for single email:", err);
+        console.error("[classifyAndSummarizeEmailFn] Failed to run remote API call for single email:", err);
         return { success: false, error: err.message };
       }
     }
@@ -466,11 +490,12 @@ export const classifyAndSummarizeEmailsBatchFn = createServerFn({ method: "POST"
     geminiApiKey: z.string().optional(),
   }))
   .handler(async ({ data }) => {
-    // 1. If BACKEND_API_URL is configured, use the remote FastAPI server
-    const backendUrl = process.env.BACKEND_API_URL;
+    const backendUrl = getBackendUrl();
+    console.log(`[classifyAndSummarizeEmailsBatchFn] Resolved backendUrl: ${backendUrl}`);
     if (backendUrl) {
+      const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/classify` : `${backendUrl}/api/classify`;
+      console.log(`[classifyAndSummarizeEmailsBatchFn] Proxying batch classify to: ${apiUrl}`);
       try {
-        const apiUrl = backendUrl.endsWith("/") ? `${backendUrl}api/classify` : `${backendUrl}/api/classify`;
         const payload = {
           emails: data.emails.map(e => ({
             id: e.id,
@@ -480,7 +505,7 @@ export const classifyAndSummarizeEmailsBatchFn = createServerFn({ method: "POST"
             studentName: e.studentName || "",
             studentEntryNo: e.studentEntryNo || "",
           })),
-          geminiApiKey: data.geminiApiKey || process.env.GEMINI_API_KEY || "",
+          geminiApiKey: data.geminiApiKey || (typeof process !== "undefined" ? process.env.GEMINI_API_KEY : "") || "",
         };
 
         const response = await fetch(apiUrl, {
@@ -490,13 +515,15 @@ export const classifyAndSummarizeEmailsBatchFn = createServerFn({ method: "POST"
         });
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errText = await response.text().catch(() => "");
+          console.error(`[classifyAndSummarizeEmailsBatchFn] Proxy responded with status ${response.status}:`, errText);
+          throw new Error(`Proxy error! Status ${response.status}: ${errText || "No response details"}`);
         }
 
         const resData = (await response.json()) as any;
         return resData;
       } catch (err: any) {
-        console.error("Failed to run remote API call for batch emails:", err);
+        console.error("[classifyAndSummarizeEmailsBatchFn] Failed to run remote API call for batch emails:", err);
         return { success: false, error: err.message };
       }
     }
