@@ -308,6 +308,7 @@ def process_single_email(item: EmailItem, api_key: str):
         }
 
 @app.get("/")
+@app.head("/")
 def read_root():
     return {"status": "healthy", "service": "Mail Mind Agent REST API"}
 
