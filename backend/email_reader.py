@@ -253,7 +253,12 @@ def fetch_new_emails(
     logger.info("Connecting to IMAP server %s:%d …", host, port)
 
     # Connection errors bubble up to the caller
-    conn = imaplib.IMAP4_SSL(host, port)
+    import ssl
+    try:
+        context = ssl._create_unverified_context()
+    except AttributeError:
+        context = None
+    conn = imaplib.IMAP4_SSL(host, port, ssl_context=context)
     conn.login(user, password)
     conn.select(mailbox, readonly=False)
 

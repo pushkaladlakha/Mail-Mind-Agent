@@ -44,6 +44,7 @@ function ConnectPage() {
   const [authStatus, setAuthStatus] = useState<AuthStatus>("idle");
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loadingMessage, setLoadingMessage] = useState("Connecting securely…");
 
   // Focus ref for security password reset focus shifting
@@ -54,6 +55,7 @@ function ConnectPage() {
     setEmail(val);
     if (authStatus === "invalid_credentials" || authStatus === "server_error") {
       setAuthStatus("idle");
+      setErrorMessage(null);
     }
 
     const trimmed = val.trim();
@@ -74,6 +76,7 @@ function ConnectPage() {
     setPassword(val);
     if (authStatus === "invalid_credentials" || authStatus === "server_error") {
       setAuthStatus("idle");
+      setErrorMessage(null);
     }
   };
 
@@ -105,9 +108,13 @@ function ConnectPage() {
       if (!verification.success) {
         const isConnectionError = 
           verification.error?.toLowerCase().includes("timed out") || 
-          verification.error?.toLowerCase().includes("connect");
+          verification.error?.toLowerCase().includes("connect") ||
+          verification.error?.toLowerCase().includes("unreachable") ||
+          verification.error?.toLowerCase().includes("dns") ||
+          verification.error?.toLowerCase().includes("name or service not known");
 
         setAuthStatus(isConnectionError ? "server_error" : "invalid_credentials");
+        setErrorMessage(verification.error || "Authentication failed. Please verify your college Kerberos email and password.");
         setPassword("");
         passwordRef.current?.focus();
         return;
@@ -370,7 +377,7 @@ function ConnectPage() {
                 >
                   <AlertCircle className="size-4 shrink-0 mt-0.5 text-amber-600" />
                   <span className="leading-relaxed">
-                    Authentication failed. Please verify your college Kerberos email and password.
+                    {errorMessage || "Authentication failed. Please verify your college Kerberos email and password."}
                   </span>
                 </div>
               )}
@@ -381,9 +388,16 @@ function ConnectPage() {
                   className="flex items-start gap-3 text-xs font-semibold text-amber-800 bg-amber-50/70 border border-amber-200/50 rounded-xl p-4 shadow-sm animate-in fade-in slide-in-from-top-1 duration-300"
                 >
                   <ServerCrash className="size-4 shrink-0 mt-0.5 text-amber-600" />
-                  <span className="leading-relaxed">
-                    Unable to contact the IIT webmail server. Please verify your internet connection.
-                  </span>
+                  <div className="flex flex-col gap-1 text-left">
+                    <span className="leading-relaxed">
+                      Unable to contact the IIT webmail server. Please verify your internet connection.
+                    </span>
+                    {errorMessage && (
+                      <span className="text-[10px] font-mono opacity-80 break-all leading-normal">
+                        Details: {errorMessage}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
 

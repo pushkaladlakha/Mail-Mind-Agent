@@ -109,7 +109,12 @@ def parse_single_message(uid: int, msg: email.message.Message) -> dict:
 def fetch_emails_via_imap(host: str, port: int, user: str, password: str, mode: str = "latest_count", last_uid: Optional[int] = None, count: int = 15, skip_count: int = 0):
     username = user.split("@")[0]
     
-    conn = imaplib.IMAP4_SSL(host, port)
+    import ssl
+    try:
+        context = ssl._create_unverified_context()
+    except AttributeError:
+        context = None
+    conn = imaplib.IMAP4_SSL(host, port, ssl_context=context)
     conn.login(username, password)
     try:
         status, select_data = conn.select("INBOX", readonly=True)
@@ -363,7 +368,12 @@ def imap_login_endpoint(request: IMAPLoginRequest):
         return {"success": True}
         
     try:
-        conn = imaplib.IMAP4_SSL(request.imapHost, request.imapPort)
+        import ssl
+        try:
+            context = ssl._create_unverified_context()
+        except AttributeError:
+            context = None
+        conn = imaplib.IMAP4_SSL(request.imapHost, request.imapPort, ssl_context=context)
         conn.login(username, request.password)
         conn.logout()
         return {"success": True}
