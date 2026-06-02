@@ -370,7 +370,7 @@ function ConnectPage() {
                 >
                   <AlertCircle className="size-4 shrink-0 mt-0.5 text-amber-600" />
                   <span className="leading-relaxed">
-                    Authentication failed. Please verify your email and password. (Try username <code className="font-mono bg-white px-1 rounded">admin</code> / password <code className="font-mono bg-white px-1 rounded">admin123</code> for testing).
+                    Authentication failed. Please verify your college Kerberos email and password.
                   </span>
                 </div>
               )}
