@@ -86,17 +86,34 @@ The **Python Email AI Agent daemon** worker.
 
 ## 🌐 Production Hosting Guidelines
 
-When deploying Mail Mind to live servers, keep the following configuration parameters in mind:
+Mail Mind is designed as a **decoupled application** for production hosting. The frontend runs as a serverless web app on **Vercel**, and the Python intelligence engine runs as a web service + background polling daemon on **Render**.
 
-### 1. Server Runtimes
-* **Node & Python Cohabitation**: The Node.js server actions spawn Python subprocesses to execute classification tasks. Your hosting environment **must support both Node.js and Python runtimes**.
-* **Recommended Services**: Render, Heroku, Railway, or a VPS (DigitalOcean Droplet, AWS EC2) are highly recommended. Ephemeral/serverless hostings like Vercel or Netlify do not support launching persistent Python subprocesses out of the box.
+---
 
-### 2. Environment Variables
-Ensure the following variables are defined on your hosting platform settings:
-* `PYTHON_PATH`: The absolute path to the Python executable (e.g. `/usr/bin/python3`). The server functions will dynamically fall back to this path if `.venv` is missing.
-* `GEMINI_API_KEY`: Fallback developer API key for email summaries.
-* `NEON_DATABASE_URL`: Connection string for your Neon PostgreSQL database.
-* `GOOGLE_CREDENTIALS_JSON_CONTENT`: A raw string of your `credentials.json` file. Allows Google Calendar integration without writing static credential files.
-* `GOOGLE_TOKEN_JSON_CONTENT`: A raw string of your generated `token.json` file. Allows background Google OAuth2 authentication in headless cloud environments (first run `python backend/calendar_sync.py --auth` locally to generate your token).
+### 1. 🐍 Python Backend (Render Web Service)
+
+Deploy the `backend` folder to **Render** as a **Web Service**:
+
+* **Root Directory:** `backend`
+* **Build Command:** `pip install -r requirements.txt`
+* **Start Command:** `python -m uvicorn api:app --host 0.0.0.0 --port $PORT`
+* **Environment Variables on Render:**
+  * `NEON_DATABASE_URL`: Connection string to your Neon PostgreSQL database (used for checking already processed email UIDs and logs).
+  * `GEMINI_API_KEY`: Fallback developer API key for email summaries.
+  * `IMAP_USER` / `IMAP_PASSWORD`: Credentials for the background continuous email polling loop. *(Leave empty if you want to disable background daemon polling and only allow manual user syncs on the website).*
+  * `GOOGLE_CREDENTIALS_JSON_CONTENT`: A raw string of your `credentials.json` file. Allows Google Calendar integration without writing static credential files.
+  * `GOOGLE_TOKEN_JSON_CONTENT`: A raw string of your generated `token.json` file. Allows background Google OAuth2 authentication in headless cloud environments (first run `python backend/calendar_sync.py --auth` locally to generate your token).
+
+---
+
+### 2. 💻 React Frontend (Vercel Web App)
+
+Deploy the `frontend` folder to **Vercel** as a **Web Project**:
+
+* **Root Directory:** `frontend`
+* **Framework Preset:** Select **Other** (allows Nitro to configure Vercel output).
+* **Build Command:** `npm run build`
+* **Environment Variables on Vercel:**
+  * `BACKEND_API_URL`: Set to your live Render backend URL (e.g. `https://mail-mind-agent.onrender.com`).
+  * `NITRO_PRESET`: Set to `vercel`.
 
