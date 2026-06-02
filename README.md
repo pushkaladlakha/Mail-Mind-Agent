@@ -93,7 +93,10 @@ When deploying Mail Mind to live servers, keep the following configuration param
 * **Recommended Services**: Render, Heroku, Railway, or a VPS (DigitalOcean Droplet, AWS EC2) are highly recommended. Ephemeral/serverless hostings like Vercel or Netlify do not support launching persistent Python subprocesses out of the box.
 
 ### 2. Environment Variables
-Ensure the following variable is defined on your hosting platform:
-* `PYTHON_PATH`: The absolute path to the Python executable (e.g. `/usr/bin/python3` or your virtual environment binary). The server functions will dynamically fall back to this environment path if `.venv` is missing.
+Ensure the following variables are defined on your hosting platform settings:
+* `PYTHON_PATH`: The absolute path to the Python executable (e.g. `/usr/bin/python3`). The server functions will dynamically fall back to this path if `.venv` is missing.
 * `GEMINI_API_KEY`: Fallback developer API key for email summaries.
-* `NEON_DATABASE_URL`: Connection string for PostgreSQL database.
+* `NEON_DATABASE_URL`: Connection string for your Neon PostgreSQL database.
+* `GOOGLE_CREDENTIALS_JSON_CONTENT`: A raw string of your `credentials.json` file. Allows Google Calendar integration without writing static credential files.
+* `GOOGLE_TOKEN_JSON_CONTENT`: A raw string of your generated `token.json` file. Allows background Google OAuth2 authentication in headless cloud environments (first run `python backend/calendar_sync.py --auth` locally to generate your token).
+

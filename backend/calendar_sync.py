@@ -44,14 +44,25 @@ def get_calendar_service(
     Build and return an authenticated Google Calendar API service.
 
     Flow:
-    1. If token.json exists and credentials are valid → use them.
-    2. If token is expired but has a refresh token → refresh automatically.
-    3. If no valid token → run InstalledAppFlow (requires browser on first run).
-    4. Save refreshed/new token back to token_json path.
+    1. Check if token content environment variable is present, or check if token.json file exists.
+    2. If credentials are valid -> use them.
+    3. If token is expired but has a refresh token -> refresh automatically.
+    4. If no valid token -> run InstalledAppFlow using credentials.json content or file.
+    5. Save refreshed/new token back to token_json path.
     """
     creds: Optional[Credentials] = None
+    import json
 
-    if os.path.exists(token_json):
+    token_content = os.getenv("GOOGLE_TOKEN_JSON_CONTENT")
+    if token_content:
+        try:
+            info = json.loads(token_content)
+            creds = Credentials.from_authorized_user_info(info, SCOPES)
+            logger.info("Loaded Google OAuth token from environment variable.")
+        except Exception as e:
+            logger.error("Failed to parse token content environment variable: %s", e)
+
+    if not creds and os.path.exists(token_json):
         creds = Credentials.from_authorized_user_file(token_json, SCOPES)
         logger.debug("Loaded existing token from %s", token_json)
 
@@ -74,15 +85,37 @@ def get_calendar_service(
             logger.info(
                 "No valid token found. Starting OAuth2 InstalledAppFlow…"
             )
-            flow = InstalledAppFlow.from_client_secrets_file(
-                credentials_json, SCOPES
-            )
-            creds = flow.run_local_server(port=0)
+            creds_content = os.getenv("GOOGLE_CREDENTIALS_JSON_CONTENT")
+            if creds_content:
+                try:
+                    info = json.loads(creds_content)
+                    flow = InstalledAppFlow.from_client_config(info, SCOPES)
+                except Exception as e:
+                    logger.error("Failed to parse credentials content environment variable: %s", e)
+                    raise CalendarAuthError("Google credentials configuration missing or invalid.")
+            else:
+                if not os.path.exists(credentials_json):
+                    raise CalendarAuthError(f"Missing Google credentials: {credentials_json} file or GOOGLE_CREDENTIALS_JSON_CONTENT environment variable not found.")
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    credentials_json, SCOPES
+                )
+            
+            # Note: run_local_server will fail in headless hosted environments
+            try:
+                creds = flow.run_local_server(port=0)
+            except Exception as e:
+                raise CalendarAuthError(
+                    f"Headless server authentication failed. First perform local authentication with 'python calendar_sync.py --auth' and copy the token.json contents to the GOOGLE_TOKEN_JSON_CONTENT environment variable on Render. Detail: {e}"
+                )
 
         # Persist the (refreshed) token for next run
-        with open(token_json, "w") as f:
-            f.write(creds.to_json())
-        logger.info("Token saved to %s", token_json)
+        try:
+            # Update local file if writable
+            with open(token_json, "w") as f:
+                f.write(creds.to_json())
+            logger.info("Token saved to %s", token_json)
+        except OSError:
+            pass
 
     service = build("calendar", "v3", credentials=creds)
     logger.debug("Google Calendar service ready.")
